@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT guilds.id, guilds.name, guilds.owner_id, guilds.avatar_hash\n            FROM guilds\n            INNER JOIN members ON members.guild_id = guilds.id\n            WHERE members.user_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "owner_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "avatar_hash",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "351789d1aac7c54654a44dbda1257686dcbf26e75cf33b770da23b1009a04882"
+}

@@ -1,0 +1,17 @@
+pub mod attachment;
+pub mod auth;
+pub mod avatar;
+pub mod bucket;
+pub mod channel;
+pub mod data_uri;
+pub mod db;
+pub mod errors;
+pub mod gateway_event;
+pub mod guild;
+pub mod member;
+pub mod message;
+pub mod prefs;
+pub mod requests;
+pub mod snowflake;
+pub mod state;
+pub mod user;
