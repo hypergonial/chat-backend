@@ -658,7 +658,8 @@ async fn send_events(
                 return Ok(code);
             }
             GatewayResponse::Event(event) => {
-                if let Err(e) = send_serializable(&mut *ws_sink.lock().await, event).await {
+                let res = send_serializable(&mut *ws_sink.lock().await, event).await;
+                if let Err(e) = res {
                     tracing::warn!(error = %e, "Error sending event to user {user_id}: {e}");
                     return Err(e);
                 }
