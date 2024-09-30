@@ -2,7 +2,10 @@ use core::fmt::Debug;
 
 use axum::{extract::FromRequestParts, http::request::Parts, RequestPartsExt};
 use axum_extra::{
-    headers::{authorization::Bearer, Authorization},
+    headers::{
+        authorization::{Basic, Bearer},
+        Authorization,
+    },
     TypedHeader,
 };
 use chrono::prelude::*;
@@ -189,7 +192,7 @@ impl FromRequestParts<App> for Token {
 }
 
 /// An incoming set of credentials.
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct Credentials {
     username: String,
     password: Secret<String>,
@@ -212,6 +215,23 @@ impl Credentials {
     /// The password belonging to this set of credentials.
     pub const fn password(&self) -> &Secret<String> {
         &self.password
+    }
+}
+
+// Credentials extractor for axum.
+// Extracts the credentials from the Authorization header.
+#[async_trait::async_trait]
+impl<S> FromRequestParts<S> for Credentials {
+    type Rejection = RESTError;
+
+    /// Extract a token from request Authorization header
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        let TypedHeader(Authorization(basic)) = parts
+            .extract::<TypedHeader<Authorization<Basic>>>()
+            .await
+            .map_err(|_| AuthError::MissingCredentials)?;
+        // Decode the user data
+        Ok(Self::new(basic.username().to_string(), basic.password().to_string()))
     }
 }
 

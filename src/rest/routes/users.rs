@@ -81,7 +81,7 @@ async fn create_user(State(app): State<App>, Json(payload): Json<CreateUser>) ->
 /// ## Endpoint
 ///
 /// POST `/users/auth`
-async fn auth_user(State(app): State<App>, Json(credentials): Json<Credentials>) -> Result<Json<Value>, RESTError> {
+async fn auth_user(State(app): State<App>, credentials: Credentials) -> Result<Json<Value>, RESTError> {
     let user_id = validate_credentials(app.clone(), credentials).await?;
     let token = Token::new_for(app.config.app_secret(), user_id)?;
 
