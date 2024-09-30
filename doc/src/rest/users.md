@@ -34,14 +34,7 @@ The created [User](../objects/user.md) object.
 
 Authenticates a user, providing an authorization token for use in the REST API and gateway.
 
-### Payload
-
-```json
-{
-    "username": "example",
-    "password": "*******"
-}
-```
+The credentials should be passed according to the [Basic](https://en.wikipedia.org/wiki/Basic_access_authentication) auth scheme.
 
 ### Response
 
