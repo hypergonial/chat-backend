@@ -23,7 +23,7 @@ use serde_json::Value;
 pub fn get_router() -> Router<App> {
     Router::new()
         .route("/users", post(create_user))
-        .route("/users/auth", post(auth_user))
+        .route("/users/auth", get(auth_user))
         .route("/users/@me", get(fetch_self))
         .route("/users/@me/guilds", get(fetch_self_guilds))
         .route("/users/@me/presence", patch(update_presence))
@@ -80,7 +80,7 @@ async fn create_user(State(app): State<App>, Json(payload): Json<CreateUser>) ->
 ///
 /// ## Endpoint
 ///
-/// POST `/users/auth`
+/// GET `/users/auth`
 async fn auth_user(State(app): State<App>, credentials: Credentials) -> Result<Json<Value>, RESTError> {
     let user_id = validate_credentials(app.clone(), credentials).await?;
     let token = Token::new_for(app.config.app_secret(), user_id)?;
