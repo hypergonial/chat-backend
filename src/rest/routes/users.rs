@@ -50,19 +50,16 @@ pub fn get_router() -> Router<App> {
 async fn create_user(State(app): State<App>, Json(payload): Json<CreateUser>) -> Result<Json<User>, RESTError> {
     let password = payload.password.clone();
 
-    let user = User::from_payload(&app.config, &payload)?;
-
-    if app.ops().fetch_user_by_username(user.username()).await.is_some() {
+    if app.ops().fetch_user_by_username(&payload.username).await.is_some() {
         return Err(RESTError::BadRequest(format!(
             "User with username {} already exists",
-            user.username()
+            payload.username
         )));
     }
 
+    // User needs to be created before credentials to avoid foreign key constraint violation
+    let user = app.ops().create_user(payload).await?;
     let credentials = StoredCredentials::new(user.id(), generate_hash(&password)?);
-
-    // User needs to be created before credentials to avoid foreign key constraint
-    app.ops().create_user(payload).await?;
     credentials.commit(app).await?;
 
     Ok(Json(user))

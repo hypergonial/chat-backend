@@ -11,9 +11,8 @@ use crate::gateway::handler::Gateway;
 use super::{
     avatar::{Avatar, FullAvatar, PartialAvatar, UserAvatar},
     errors::BuildError,
-    requests::{CreateUser, UpdateUser},
+    requests::UpdateUser,
     snowflake::Snowflake,
-    state::Config,
 };
 
 static USERNAME_REGEX: LazyLock<Regex> = LazyLock::new(|| {
@@ -140,28 +139,6 @@ impl User {
         } else {
             &Presence::Offline
         }
-    }
-
-    /// Creates a new user object from a create user payload.
-    ///
-    /// ## Arguments
-    ///
-    /// * `config` - The application configuration.
-    /// * `payload` - The payload to create the user from.
-    ///
-    /// ## Errors
-    ///
-    /// * [`BuilderError::ValidationError`] - If the username is invalid.
-    pub fn from_payload(config: &Config, payload: &CreateUser) -> Result<Self, BuildError> {
-        Self::validate_username(&payload.username)?;
-        Ok(Self {
-            id: Snowflake::gen_new(config),
-            username: payload.username.clone(),
-            display_name: None,
-            avatar: None,
-            last_presence: Presence::default(),
-            displayed_presence: None,
-        })
     }
 
     /// Build a user object directly from a database record.
