@@ -56,7 +56,7 @@ impl<T> Snowflake<T> {
 
     /// Returns the creation time of this snowflake.
     pub fn created_at(&self) -> DateTime<Utc> {
-        DateTime::from_timestamp(self.timestamp(), 0).expect("Failed to convert timestamp to DateTime")
+        DateTime::from_timestamp_millis(self.timestamp()).expect("Failed to convert timestamp to DateTime")
     }
 
     /// Returns the worker ID that generated this snowflake.
