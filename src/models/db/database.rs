@@ -34,7 +34,7 @@ impl Database {
     /// ## Panics
     ///
     /// If the database is not connected
-    pub fn pool(&self) -> &PgPool {
+    pub const fn pool(&self) -> &PgPool {
         self.pool
             .as_ref()
             .expect("Database is not connected or has been closed.")

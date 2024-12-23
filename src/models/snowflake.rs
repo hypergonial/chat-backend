@@ -55,7 +55,7 @@ impl<T> Snowflake<T> {
     }
 
     /// Returns the creation time of this snowflake.
-    pub fn created_at(&self) -> DateTime<Utc> {
+    pub const fn created_at(&self) -> DateTime<Utc> {
         DateTime::from_timestamp_millis(self.timestamp()).expect("Failed to convert timestamp to DateTime")
     }
 

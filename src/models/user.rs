@@ -101,7 +101,7 @@ impl User {
     }
 
     /// The user's creation date.
-    pub fn created_at(&self) -> DateTime<Utc> {
+    pub const fn created_at(&self) -> DateTime<Utc> {
         self.id.created_at()
     }
 

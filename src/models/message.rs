@@ -102,7 +102,7 @@ impl Message {
     }
 
     /// The time at which this message was sent.
-    pub fn created_at(&self) -> DateTime<Utc> {
+    pub const fn created_at(&self) -> DateTime<Utc> {
         self.id.created_at()
     }
 
