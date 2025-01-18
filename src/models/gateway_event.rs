@@ -145,11 +145,10 @@ impl HelloPayload {
 }
 
 /// A wrapper object around an ID with an optional `guild_id` to aid gateway event filtering.
-/// The `guild_id` field is not serialized and sent through the API.
+/// TODO: This is kinda dumb, and should be probably removed with a gateway refactor
 #[derive(Debug, Clone, Serialize)]
 pub struct DeletePayload<T> {
     id: Snowflake<T>,
-    #[serde(skip)]
     guild_id: Option<Snowflake<Guild>>,
 }
 

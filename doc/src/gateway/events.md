@@ -42,7 +42,10 @@ Sent when a member leaves a guild that the currently authenticated user is a mem
 
 ### Data
 
-The ID of the member that left.
+| Field | Type | Description |
+| --- | --- | --- |
+| `id` | `Snowflake` | The member's ID that left the guild. |
+| `guild_id` | `Snowflake` | The guild's ID. |
 
 ## GUILD_CREATE
 
