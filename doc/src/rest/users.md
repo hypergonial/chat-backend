@@ -28,7 +28,7 @@ The created [User](../objects/user.md) object.
 
 # /users/auth
 
-## POST
+## GET
 
 ### Summary
 
