@@ -86,7 +86,6 @@ impl Field {
 /// A type that can be extracted from a request where the request body is a multipart form with a required 'json' field and optional file fields.
 pub struct MultipartJson<T: DeserializeOwned>(pub T, pub Vec<Field>);
 
-#[async_trait::async_trait]
 impl<T, S> FromRequest<S> for MultipartJson<T>
 where
     S: Send + Sync,

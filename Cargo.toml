@@ -34,9 +34,15 @@ tokio-stream = "0.1"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 bytes = "1.7"
-axum = { version = "0.7", features = ["ws", "multipart", "tracing", "http2"] }
-axum-extra = { version = "0.9", features = ["typed-header"] }
-tower-http = { version = "0.6", features = ["limit", "cors", "trace"] }
+axum = { version = "0.8", features = ["ws", "multipart", "tracing", "http2"] }
+axum-extra = { version = "0.10", features = ["typed-header"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = [
+    "limit",
+    "cors",
+    "trace",
+    "normalize-path",
+] }
 http = "1.2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -54,7 +60,7 @@ chrono = { version = "0.4", default-features = false, features = [
 ] }
 # Consider swapping to using object-store instead? https://crates.io/crates/object_store
 aws-config = "1.5"
-aws-sdk-s3 = "1.54"
+aws-sdk-s3 = "1.71"
 secrecy = { version = "0.8", features = ["serde"] }
 argon2 = { version = "0.5", features = ["std"] }
 bitflags = { version = "2.6", features = ["serde"] }

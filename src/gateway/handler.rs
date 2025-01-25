@@ -1,5 +1,4 @@
 use std::{
-    borrow::Cow,
     collections::HashSet,
     sync::{Arc, Weak},
     time::Duration,
@@ -7,7 +6,7 @@ use std::{
 
 use axum::{
     extract::{
-        ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade},
+        ws::{CloseFrame, Message, Utf8Bytes, WebSocket, WebSocketUpgrade},
         State,
     },
     response::IntoResponse,
@@ -464,7 +463,7 @@ async fn send_serializable(
     ser: impl Serialize,
 ) -> Result<(), axum::Error> {
     let message = serde_json::to_string(&ser).expect("Expected Serializable object to not fail serialization");
-    ws_sink.send(Message::Text(message)).await
+    ws_sink.send(Message::Text(message.into())).await
 }
 
 /// Send a close frame to the client
@@ -479,7 +478,7 @@ async fn send_serializable(
 async fn send_close_frame(
     ws_sink: &mut SplitSink<WebSocket, Message>,
     code: GatewayCloseCode,
-    reason: impl Into<Cow<'static, str>>,
+    reason: impl Into<Utf8Bytes>,
 ) -> Result<(), axum::Error> {
     ws_sink
         .send(Message::Close(Some(CloseFrame {
@@ -508,7 +507,8 @@ async fn handle_handshake(
     ws_sink
         .send(Message::Text(
             serde_json::to_string(&GatewayEvent::Hello(HelloPayload::new(HEARTBEAT_INTERVAL)))
-                .expect("Failed to serialize HELLO payload"),
+                .expect("Failed to serialize HELLO payload")
+                .into(),
         ))
         .await
         .ok();

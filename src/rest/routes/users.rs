@@ -28,7 +28,7 @@ pub fn get_router() -> Router<App> {
         .route_with_tsr("/users/@me", get(fetch_self))
         .route_with_tsr("/users/@me/guilds", get(fetch_self_guilds))
         .route_with_tsr("/users/@me/presence", patch(update_presence))
-        .route_with_tsr("/usernames/:username", get(query_username))
+        .route_with_tsr("/usernames/{username}", get(query_username))
         .route_with_tsr(
             "/users/@me",
             patch(update_self).layer(RequestBodyLimitLayer::new(2 * 1024 * 1024 /* 2mb */)),

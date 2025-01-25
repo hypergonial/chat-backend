@@ -176,7 +176,6 @@ impl Debug for Token {
 }
 
 /// Token extractor for axum.
-#[async_trait::async_trait]
 impl FromRequestParts<App> for Token {
     type Rejection = RESTError;
 
@@ -220,8 +219,7 @@ impl Credentials {
 
 // Credentials extractor for axum.
 // Extracts the credentials from the Authorization header.
-#[async_trait::async_trait]
-impl<S> FromRequestParts<S> for Credentials {
+impl<S: Sync + Send> FromRequestParts<S> for Credentials {
     type Rejection = RESTError;
 
     /// Extract a token from request Authorization header
