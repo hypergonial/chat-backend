@@ -11,13 +11,13 @@ use crate::gateway::handler::Gateway;
 use super::{
     avatar::{Avatar, FullAvatar, PartialAvatar, UserAvatar},
     errors::BuildError,
-    requests::UpdateUser,
+    requests::{CreateUser, UpdateUser},
     snowflake::Snowflake,
+    state::Config,
 };
 
 static USERNAME_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9]*(?:[._][a-zA-Z0-9]+)*[a-zA-Z0-9])$")
-        .expect("Failed to compile username regex")
+    Regex::new(r"^([a-z0-9]|[a-z0-9]+(?:[._][a-z0-9]+)*)$").expect("Failed to compile username regex")
 });
 
 /// Represents the presence of a user.
@@ -141,6 +141,31 @@ impl User {
         }
     }
 
+    /// Create a new user from a payload.
+    ///
+    /// ## Parameters
+    ///
+    /// * `config` - The application configuration.
+    /// * `payload` - The payload containing the user's data.
+    ///
+    /// ## Errors
+    ///
+    /// * [`BuildError::ValidationError`] - If the username is invalid.
+    ///
+    /// ## Returns
+    ///
+    /// The new user object.
+    pub fn from_payload(config: &Config, payload: &CreateUser) -> Result<Self, BuildError> {
+        Ok(Self {
+            id: Snowflake::gen_new(config),
+            username: Self::validate_username(&payload.username)?.to_string(),
+            display_name: None,
+            avatar: None,
+            last_presence: Presence::Online,
+            displayed_presence: None,
+        })
+    }
+
     /// Build a user object directly from a database record.
     pub fn from_record(record: UserRecord) -> Self {
         Self {
@@ -176,12 +201,20 @@ impl User {
     ///
     /// The avatar data still needs to be uploaded to S3.
     pub fn update(&mut self, request: UpdateUser) -> Result<bool, BuildError> {
-        self.display_name = request.display_name;
-        let mut has_avatar_changed = false;
-
         if let Some(username) = request.username {
             self.set_username(username)?;
         }
+
+        if let Some(ref display_name) = request.display_name {
+            if display_name.len() < 3 {
+                return Err(BuildError::ValidationError(
+                    "Display name must be at least 3 characters long".to_string(),
+                ));
+            }
+        }
+
+        self.display_name = request.display_name;
+        let mut has_avatar_changed = false;
 
         if let Some(uri) = request.avatar {
             self.avatar = Some(Avatar::Full(FullAvatar::from_data_uri(&*self, uri)?));
@@ -213,6 +246,15 @@ impl User {
         Ok(())
     }
 
+    /// Validates a username.
+    ///
+    /// ## Errors
+    ///
+    /// * [`BuildError::ValidationError`] - If the username is invalid.
+    ///
+    /// ## Returns
+    ///
+    /// The username if it is valid.
     fn validate_username(username: &str) -> Result<&str, BuildError> {
         if !USERNAME_REGEX.is_match(username) {
             return Err(BuildError::ValidationError(format!(

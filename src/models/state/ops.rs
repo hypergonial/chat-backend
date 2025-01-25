@@ -619,19 +619,19 @@ impl<'a> Ops<'a> {
     /// ## Errors
     ///
     /// * [`sqlx::Error`] - If the database query fails.
-    pub async fn create_user(&self, payload: CreateUser) -> Result<User, sqlx::Error> {
-        let gen_id = Snowflake::<User>::gen_new(&self.app.config);
+    pub async fn create_user(&self, payload: CreateUser) -> Result<User, AppError> {
+        let user = User::from_payload(&self.app.config, &payload)?;
 
-        sqlx::query_as!(
-            UserRecord,
+        sqlx::query!(
             "INSERT INTO users (id, username)
-            VALUES ($1, $2) RETURNING *",
-            gen_id as Snowflake<User>,
+            VALUES ($1, $2)",
+            user.id() as Snowflake<User>,
             payload.username,
         )
-        .fetch_one(self.app.db.pool())
-        .await
-        .map(User::from_record)
+        .execute(self.app.db.pool())
+        .await?;
+
+        Ok(user)
     }
 
     /// Commit this user to the database.

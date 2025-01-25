@@ -46,7 +46,7 @@ impl Database {
     ///
     /// `true` if the database is connected, `false` otherwise
     pub fn is_connected(&self) -> bool {
-        self.pool.as_ref().map_or(false, |pool| !pool.is_closed())
+        self.pool.as_ref().is_some_and(|pool| !pool.is_closed())
     }
 
     /// Connects to the database
