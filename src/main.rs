@@ -5,11 +5,12 @@ pub mod models;
 pub mod rest;
 pub mod utils;
 
-use axum::Router;
+use axum::{extract::Request, Router, ServiceExt};
 use color_eyre::eyre::Result;
 use models::state::App;
 use tokio::signal::ctrl_c;
-use tower_http::trace::TraceLayer;
+use tower::Layer;
+use tower_http::{normalize_path::NormalizePathLayer, trace::TraceLayer};
 
 #[cfg(debug_assertions)]
 use tracing::level_filters::LevelFilter;
@@ -62,28 +63,29 @@ async fn main() -> Result<()> {
     /* console_subscriber::init(); */
     tracing::subscriber::set_global_default(subscriber).expect("Failed to set subscriber");
 
-    let gateway_routes = gateway::handler::get_router();
-    let rest_routes = rest::routes::get_router();
-
     // Initialize the application state
     let state = ApplicationState::new_shared().await?;
 
     let router = Router::new()
-        .nest("/gateway/v1", gateway_routes)
-        .nest("/api/v1", rest_routes)
+        .nest("/gateway/v1", gateway::handler::get_router())
+        .nest("/api/v1", rest::routes::get_router())
         .layer(TraceLayer::new_for_http())
         .with_state(state.clone());
 
     let listener = tokio::net::TcpListener::bind(state.config.listen_addr())
         .await
-        .expect("Failed to bind to address");
+        .expect("Failed to bind address");
 
     tracing::info!("Listening on {}", state.config.listen_addr());
 
-    axum::serve(listener, router)
-        .with_graceful_shutdown(handle_signals(state))
-        .await
-        .expect("Failed creating server");
+    axum::serve(
+        listener,
+        // voodoo magic to make trailing slashes go away from URLs
+        ServiceExt::<Request>::into_make_service(NormalizePathLayer::trim_trailing_slash().layer(router)),
+    )
+    .with_graceful_shutdown(handle_signals(state))
+    .await
+    .expect("Failed creating server");
 
     Ok(())
 }

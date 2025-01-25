@@ -4,15 +4,14 @@ use axum::{
     routing::{get, patch},
     Json, Router,
 };
-use axum_extra::routing::RouterExt;
 
 use crate::models::{auth::Token, prefs::Prefs};
 use crate::models::{errors::RESTError, requests::UpdatePrefs, state::App};
 
 pub fn get_router() -> Router<App> {
     Router::new()
-        .route_with_tsr("/prefs", get(get_prefs))
-        .route_with_tsr("/prefs", patch(update_prefs))
+        .route("/prefs", get(get_prefs))
+        .route("/prefs", patch(update_prefs))
 }
 
 async fn get_prefs(State(app): State<App>, token: Token) -> Result<Json<Prefs>, RESTError> {

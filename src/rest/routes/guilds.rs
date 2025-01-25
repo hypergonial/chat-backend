@@ -4,7 +4,6 @@ use axum::{
     routing::{delete, get, patch, post},
     Json, Router,
 };
-use axum_extra::routing::RouterExt;
 use tower_http::limit::RequestBodyLimitLayer;
 
 use crate::models::{
@@ -23,15 +22,15 @@ use crate::models::{gateway_event::GuildCreatePayload, requests::UpdateGuild};
 
 pub fn get_router() -> Router<App> {
     Router::new()
-        .route_with_tsr("/guilds", post(create_guild))
-        .route_with_tsr("/guilds/{guild_id}", get(fetch_guild))
-        .route_with_tsr("/guilds/{guild_id}/channels", post(create_channel))
-        .route_with_tsr("/guilds/{guild_id}/members", post(create_member))
-        .route_with_tsr("/guilds/{guild_id}/members/@me", get(fetch_member_self))
-        .route_with_tsr("/guilds/{guild_id}/members/:member_id", get(fetch_member))
-        .route_with_tsr("/guilds/{guild_id}/members/@me", delete(leave_guild))
-        .route_with_tsr("/guilds/{guild_id}", delete(delete_guild))
-        .route_with_tsr(
+        .route("/guilds", post(create_guild))
+        .route("/guilds/{guild_id}", get(fetch_guild))
+        .route("/guilds/{guild_id}/channels", post(create_channel))
+        .route("/guilds/{guild_id}/members", post(create_member))
+        .route("/guilds/{guild_id}/members/@me", get(fetch_member_self))
+        .route("/guilds/{guild_id}/members/{member_id}", get(fetch_member))
+        .route("/guilds/{guild_id}/members/@me", delete(leave_guild))
+        .route("/guilds/{guild_id}", delete(delete_guild))
+        .route(
             "/guilds/{guild_id}",
             patch(update_guild).layer(RequestBodyLimitLayer::new(2 * 1024 * 1024 /* 2mb */)),
         )
