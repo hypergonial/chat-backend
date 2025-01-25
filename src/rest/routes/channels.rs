@@ -4,6 +4,7 @@ use axum::{
     routing::{delete, get, post},
     Json, Router,
 };
+use axum_extra::routing::RouterExt;
 use serde::{Deserialize, Serialize};
 use tower_http::limit::RequestBodyLimitLayer;
 
@@ -31,10 +32,10 @@ struct FetchMessagesQuery {
 
 pub fn get_router() -> Router<App> {
     Router::new()
-        .route("/channels/:channel_id", get(fetch_channel))
-        .route("/channels/:channel_id", delete(delete_channel))
-        .route("/channels/:channel_id/messages", post(create_message))
-        .route("/channels/:channel_id/messages", get(fetch_messages))
+        .route_with_tsr("/channels/:channel_id", get(fetch_channel))
+        .route_with_tsr("/channels/:channel_id", delete(delete_channel))
+        .route_with_tsr("/channels/:channel_id/messages", post(create_message))
+        .route_with_tsr("/channels/:channel_id/messages", get(fetch_messages))
         .layer(DefaultBodyLimit::disable())
         .layer(RequestBodyLimitLayer::new(8 * 1024 * 1024 /* 8mb */))
 }

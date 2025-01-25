@@ -4,6 +4,7 @@ use axum::{
     routing::{get, patch, post},
     Json, Router,
 };
+use axum_extra::routing::RouterExt;
 use secrecy::ExposeSecret;
 use serde_json::json;
 use tower_http::limit::RequestBodyLimitLayer;
@@ -22,13 +23,13 @@ use serde_json::Value;
 
 pub fn get_router() -> Router<App> {
     Router::new()
-        .route("/users", post(create_user))
-        .route("/users/auth", get(auth_user))
-        .route("/users/@me", get(fetch_self))
-        .route("/users/@me/guilds", get(fetch_self_guilds))
-        .route("/users/@me/presence", patch(update_presence))
-        .route("/usernames/:username", get(query_username))
-        .route(
+        .route_with_tsr("/users", post(create_user))
+        .route_with_tsr("/users/auth", get(auth_user))
+        .route_with_tsr("/users/@me", get(fetch_self))
+        .route_with_tsr("/users/@me/guilds", get(fetch_self_guilds))
+        .route_with_tsr("/users/@me/presence", patch(update_presence))
+        .route_with_tsr("/usernames/:username", get(query_username))
+        .route_with_tsr(
             "/users/@me",
             patch(update_self).layer(RequestBodyLimitLayer::new(2 * 1024 * 1024 /* 2mb */)),
         )

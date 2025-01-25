@@ -14,6 +14,7 @@ use axum::{
     routing::get,
     Router,
 };
+use axum_extra::routing::RouterExt;
 use dashmap::DashMap;
 use futures_util::{
     stream::{SplitSink, SplitStream},
@@ -437,7 +438,7 @@ impl Default for Gateway {
 ///
 /// A filter that can be used to handle the gateway
 pub fn get_router() -> Router<App> {
-    Router::new().route("/", get(websocket_handler))
+    Router::new().route_with_tsr("/", get(websocket_handler))
 }
 
 async fn websocket_handler(State(app): State<App>, ws: WebSocketUpgrade) -> impl IntoResponse {
