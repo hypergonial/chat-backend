@@ -1,5 +1,5 @@
 use axum::{
-    extract::State,
+    extract::{Path, State},
     http::StatusCode,
     routing::{get, patch, post},
     Json, Router,
@@ -222,7 +222,7 @@ pub async fn update_self(
 /// ## Endpoint
 ///
 /// GET `/users/{username}`
-pub async fn query_username(State(app): State<App>, username: String) -> Result<StatusCode, RESTError> {
+pub async fn query_username(State(app): State<App>, Path(username): Path<String>) -> Result<StatusCode, RESTError> {
     sqlx::query!("SELECT id FROM users WHERE username = $1", username)
         .fetch_optional(app.db.pool())
         .await?
