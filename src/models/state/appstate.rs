@@ -11,8 +11,8 @@ use dotenvy::dotenv;
 use secrecy::{ExposeSecret, Secret};
 
 use super::ops::Ops;
-use crate::gateway::handler::Gateway;
 use crate::models::{bucket::Buckets, db::Database, errors::BuildError};
+use crate::{gateway::handler::Gateway, models::errors::AppError};
 
 pub type App = Arc<ApplicationState>;
 pub type S3Client = Client;
@@ -31,8 +31,8 @@ impl ApplicationState {
     ///
     /// ## Errors
     ///
-    /// * [`sqlx::Error`] - If the database initialization fails.
-    pub async fn new_shared() -> Result<Arc<Self>, sqlx::Error> {
+    /// * [`AppError`] - If the application fails to initialize.
+    pub async fn new_shared() -> Result<Arc<Self>, AppError> {
         let config = Config::from_env();
 
         let s3creds = S3Creds::new(
@@ -75,8 +75,10 @@ impl ApplicationState {
     /// ## Errors
     ///
     /// * [`sqlx::Error`] - If the database connection fails.
-    async fn init(&mut self) -> Result<(), sqlx::Error> {
-        self.db.connect(self.config.database_url().expose_secret()).await
+    async fn init(&mut self) -> Result<(), AppError> {
+        self.db.connect(self.config.database_url().expose_secret()).await?;
+        self.s3.create_buckets().await?;
+        Ok(())
     }
 
     /// Closes the application and cleans up resources.

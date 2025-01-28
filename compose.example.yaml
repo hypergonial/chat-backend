@@ -70,35 +70,6 @@ services:
     networks:
       - private
 
-  create_buckets:
-    image: minio/mc:latest
-    depends_on:
-      - nginx
-    networks:
-      - private
-    restart: on-failure
-    entrypoint: >
-      /bin/sh -c '
-
-      /usr/bin/mc alias set s3-local ${MINIO_URL:-http://nginx:9000} ${MINIO_ACCESS_KEY:?err} ${MINIO_SECRET_KEY:?err} --quiet;
-
-      if [ $? -ne 0 ]; then
-          echo "Failed to connect to minio, exiting.";
-          exit 1;
-      fi;
-
-      buckets="attachments users guilds";
-
-      for bucket in $$buckets; do
-          /usr/bin/mc ls s3-local | grep -wq $$bucket;
-          if [ $? -eq 0 ]; then
-              echo Bucket $$bucket already exists, skipping creation.
-          else
-              /usr/bin/mc mb s3-local/$$bucket --region "vault";
-              /usr/bin/mc anonymous set download s3-local/$$bucket;
-          fi;
-      done; '
-
   backend:
     build:
       dockerfile: Dockerfile
@@ -120,7 +91,6 @@ services:
     depends_on:
       - db
       - nginx
-      - create_buckets
     restart: always
     networks:
       - private

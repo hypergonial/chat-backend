@@ -1,6 +1,8 @@
 use std::sync::{Arc, Weak};
 
 use aws_sdk_s3::{
+    error::SdkError,
+    operation::head_bucket::HeadBucketError,
     primitives::ByteStream,
     types::{Delete, Object, ObjectIdentifier},
     Client,
@@ -11,6 +13,19 @@ use mime::Mime;
 use super::{channel::Channel, errors::AppError, guild::Guild, snowflake::Snowflake, state::ApplicationState};
 
 pub type S3Client = Client;
+
+const ALLOW_ALL_DOWNLOADS_POLICY: &str = r#"{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "AllowAnonymousRead",
+            "Action": ["s3:GetObject"],
+            "Effect": "Allow",
+            "Principal": "*",
+            "Resource": ["arn:aws:s3:::{bucketName}/*"]
+        }
+    ]
+}"#;
 
 /// All S3 buckets used by the application.
 #[derive(Debug, Clone)]
@@ -52,6 +67,43 @@ impl Buckets {
 
     pub const fn users(&self) -> Bucket {
         self.get_bucket("users")
+    }
+
+    pub const fn guilds(&self) -> Bucket {
+        self.get_bucket("guilds")
+    }
+
+    fn get_policy_string(bucket: &str) -> String {
+        ALLOW_ALL_DOWNLOADS_POLICY.replace("{bucketName}", bucket)
+    }
+
+    /// Create all buckets if they do not exist.
+    ///
+    /// ## Errors
+    ///
+    /// * [`AppError::S3`] - If the S3 request fails.
+    pub async fn create_buckets(&self) -> Result<(), AppError> {
+        for bucket in [self.attachments().name(), self.users().name(), self.guilds().name()] {
+            match self.client.head_bucket().bucket(bucket).send().await {
+                Ok(_) => {
+                    tracing::info!("S3 Bucket {} already exists, skipping creation.", bucket);
+                }
+                Err(SdkError::ServiceError(e)) if matches!(e.err(), HeadBucketError::NotFound(_)) => {
+                    self.client.create_bucket().bucket(bucket).send().await?;
+                    self.client
+                        .put_bucket_policy()
+                        .bucket(bucket)
+                        .policy(Self::get_policy_string(bucket))
+                        .send()
+                        .await?;
+
+                    tracing::info!("Created S3 bucket: {}", bucket);
+                }
+                Err(e) => return Err(e.into()),
+            }
+        }
+
+        Ok(())
     }
 
     /// Remove all S3 data for the given channel.
