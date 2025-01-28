@@ -197,8 +197,6 @@ impl Message {
         builder.id(id).channel_id(channel_id).author(author);
 
         while let Some(part) = form.next_field().await? {
-            tracing::debug!("Form-data part: {:?}", part);
-
             if part.name() == Some("json") && part.content_type().is_some_and(|ct| ct == "application/json") {
                 let Ok(data) = part.bytes().await else {
                     return Err(RESTError::MalformedField("json".to_string()));

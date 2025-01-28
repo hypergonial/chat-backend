@@ -117,7 +117,8 @@ impl<'a> Ops<'a> {
     ///
     /// ## Returns
     ///
-    /// [`Vec<Message>`] - The messages fetched.
+    /// [`Vec<Message>`] - The messages fetched. The ordering of the returned messages is unspecified.
+    ///
     /// ## Errors
     ///
     /// * [`sqlx::Error`] - If the database query fails.

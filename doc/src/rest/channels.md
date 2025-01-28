@@ -52,6 +52,8 @@ Fetch a sequence of messages from a channel.
 
 An array of [Message](../objects/message.md) objects.
 
+**Note:** The ordering of messages returned by this endpoint is not guaranteed.
+
 ## POST
 
 ### Summary
