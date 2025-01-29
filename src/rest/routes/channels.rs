@@ -181,8 +181,7 @@ async fn create_message(
 ///
 /// PATCH `/channels/{channel_id}/messages/{message_id}`
 async fn update_message(
-    Path(channel_id): Path<Snowflake<Channel>>,
-    Path(message_id): Path<Snowflake<Message>>,
+    Path((channel_id, message_id)): Path<(Snowflake<Channel>, Snowflake<Message>)>,
     State(app): State<App>,
     token: Token,
     Json(payload): Json<UpdateMessage>,
@@ -239,8 +238,7 @@ async fn update_message(
 ///
 /// DELETE `/channels/{channel_id}/messages/{message_id}`
 async fn delete_message(
-    Path(channel_id): Path<Snowflake<Channel>>,
-    Path(message_id): Path<Snowflake<Message>>,
+    Path((channel_id, message_id)): Path<(Snowflake<Channel>, Snowflake<Message>)>,
     State(app): State<App>,
     token: Token,
 ) -> Result<StatusCode, RESTError> {
