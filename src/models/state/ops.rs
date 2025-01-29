@@ -8,7 +8,7 @@ use crate::models::{
     guild::{Guild, GuildRecord},
     member::{ExtendedMemberRecord, Member, MemberRecord, UserLike},
     message::{ExtendedMessageRecord, Message},
-    requests::{CreateGuild, CreateUser, UpdateGuild, UpdateUser},
+    requests::{CreateGuild, CreateUser, UpdateGuild, UpdateMessage, UpdateUser},
     snowflake::Snowflake,
     user::{Presence, User, UserRecord},
 };
@@ -479,7 +479,7 @@ impl<'a> Ops<'a> {
     ///
     /// * [`AppError::S3`] - If the S3 request to upload one of the attachments fails.
     /// * [`AppError::Database`] - If the database request fails.
-    pub async fn update_message(&self, message: &Message) -> Result<(), AppError> {
+    pub async fn commit_message(&self, message: &Message) -> Result<(), AppError> {
         sqlx::query!(
             "INSERT INTO messages (id, user_id, channel_id, content)
             VALUES ($1, $2, $3, $4)
@@ -498,6 +498,65 @@ impl<'a> Ops<'a> {
                 self.create_attachment(f).await?;
             }
         }
+        Ok(())
+    }
+
+    /// Update a message in the database based on an update payload.
+    ///
+    /// ## Arguments
+    ///
+    /// * `message` - The message to update.
+    /// * `payload` - The update payload.
+    ///
+    /// ## Errors
+    ///
+    /// * [`AppError::Database`] - If the database query fails.
+    /// * [`AppError::NotFound`] - If the message does not exist.
+    ///
+    /// ## Returns
+    ///
+    /// The updated message if the commit was successful.
+    pub async fn update_message(
+        &self,
+        message: impl Into<Snowflake<Message>>,
+        payload: UpdateMessage,
+    ) -> Result<Message, AppError> {
+        let message_id = message.into();
+
+        let mut message = self
+            .fetch_message(message_id)
+            .await?
+            .ok_or(AppError::NotFound("Message not found".into()))?;
+
+        message.apply_update(payload);
+
+        self.commit_message(&message).await?;
+
+        Ok(message)
+    }
+
+    /// Delete a message.
+    ///
+    /// ## Arguments
+    ///
+    /// * `message` - The message to delete.
+    ///
+    /// ## Errors
+    ///
+    /// * [`AppError::Database`] - If the database query fails.
+    pub async fn delete_message(
+        &self,
+        channel: impl Into<Snowflake<Channel>>,
+        message: impl Into<Snowflake<Message>>,
+    ) -> Result<(), AppError> {
+        let message_id = message.into();
+
+        sqlx::query!("DELETE FROM messages WHERE id = $1", message_id as Snowflake<Message>)
+            .execute(self.app.db.pool())
+            .await?;
+
+        self.app.s3.remove_all_for_message(channel, message_id).await?;
+
         Ok(())
     }
 
@@ -596,6 +655,10 @@ impl<'a> Ops<'a> {
     /// Fetch all guild IDs that this user is a member of.
     /// This is a more efficient version of [`Ops::fetch_guilds_for`] if you only need the IDs.
     ///
+    /// ## Arguments
+    ///
+    /// * `user` - The user to fetch guild IDs for.
+    ///
     /// ## Errors
     ///
     /// * [`sqlx::Error`] - If the database query fails.
@@ -635,7 +698,12 @@ impl<'a> Ops<'a> {
         Ok(user)
     }
 
-    /// Commit this user to the database.
+    /// Apply an update payload to the user.
+    ///
+    /// ## Arguments
+    ///
+    /// * `user` - The user to update.
+    /// * `payload` - The update payload.
     ///
     /// ## Errors
     ///

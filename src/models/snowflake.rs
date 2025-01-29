@@ -116,6 +116,12 @@ impl<T> Debug for Snowflake<T> {
     }
 }
 
+impl<T> Default for Snowflake<T> {
+    fn default() -> Self {
+        Self::new(0)
+    }
+}
+
 impl<T> FromStr for Snowflake<T> {
     type Err = ParseIntError;
 

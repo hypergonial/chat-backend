@@ -29,12 +29,18 @@ pub enum GatewayEvent {
     HeartbeatAck,
     /// A chat message.
     MessageCreate(Message),
+    /// A chat message was updated.
+    MessageUpdate(Message),
+    /// A chat message was deleted.
+    MessageRemove(MessageRemovePayload),
     /// A peer has joined the chat.
     MemberCreate(Member),
     /// A peer has left the chat.
     MemberRemove(DeletePayload<User>),
     /// A guild was created.
     GuildCreate(GuildCreatePayload),
+    /// A guild was updated.
+    GuildUpdate(Guild),
     /// A guild was deleted.
     GuildRemove(Guild),
     /// A channel was created.
@@ -53,11 +59,12 @@ pub enum GatewayEvent {
 impl EventLike for GatewayEvent {
     fn extract_guild_id(&self) -> Option<Snowflake<Guild>> {
         match self {
-            Self::MessageCreate(message) => message.extract_guild_id(),
+            Self::MessageCreate(message) | Self::MessageUpdate(message) => message.extract_guild_id(),
+            Self::MessageRemove(payload) => payload.guild_id,
             Self::MemberCreate(member) => member.extract_guild_id(),
             Self::MemberRemove(payload) => payload.extract_guild_id(),
             Self::GuildCreate(guild) => guild.extract_guild_id(),
-            Self::GuildRemove(payload) => payload.extract_guild_id(),
+            Self::GuildRemove(payload) | Self::GuildUpdate(payload) => payload.extract_guild_id(),
             Self::ChannelCreate(channel) => channel.extract_guild_id(),
             Self::ChannelRemove(payload) => payload.extract_guild_id(),
             Self::PresenceUpdate(_)
@@ -70,16 +77,16 @@ impl EventLike for GatewayEvent {
 
     fn extract_user_id(&self) -> Option<Snowflake<User>> {
         match self {
-            Self::MessageCreate(message) => message.extract_user_id(),
+            Self::MessageCreate(message) | Self::MessageUpdate(message) => message.extract_user_id(),
             Self::MemberCreate(member) => member.extract_user_id(),
             Self::MemberRemove(payload) => payload.extract_user_id(),
             Self::GuildCreate(guild) => guild.extract_user_id(),
-            Self::GuildRemove(payload) => payload.extract_user_id(),
+            Self::GuildRemove(payload) | Self::GuildUpdate(payload) => payload.extract_user_id(),
             Self::ChannelCreate(channel) => channel.extract_user_id(),
             Self::ChannelRemove(payload) => payload.extract_user_id(),
             Self::PresenceUpdate(payload) => Some(payload.user_id),
             Self::Ready(payload) => payload.extract_user_id(),
-            Self::InvalidSession(_) | Self::HeartbeatAck | Self::Hello(_) => None,
+            Self::InvalidSession(_) | Self::HeartbeatAck | Self::Hello(_) | Self::MessageRemove(_) => None,
         }
     }
 }
@@ -164,6 +171,30 @@ impl EventLike for DeletePayload<User> {
     }
     fn extract_user_id(&self) -> Option<Snowflake<User>> {
         None
+    }
+}
+
+/// Represents the payload of a `MESSAGE_DELETE` event.
+///
+/// This event is dispatched when a message is deleted.
+#[derive(Serialize, Clone, Debug)]
+pub struct MessageRemovePayload {
+    pub id: Snowflake<Message>,
+    pub channel_id: Snowflake<Channel>,
+    pub guild_id: Option<Snowflake<Guild>>,
+}
+
+impl MessageRemovePayload {
+    pub const fn new(
+        message_id: Snowflake<Message>,
+        channel_id: Snowflake<Channel>,
+        guild_id: Option<Snowflake<Guild>>,
+    ) -> Self {
+        Self {
+            id: message_id,
+            channel_id,
+            guild_id,
+        }
     }
 }
 

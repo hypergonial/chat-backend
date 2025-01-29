@@ -4,7 +4,7 @@
 
 ### Summary
 
-Creates a guild.
+Creates a guild. Dispatches the [GUILD_CREATE](../gateway/events.md#guild_create) gateway event.
 
 ### Payload
 
@@ -41,7 +41,7 @@ A [Guild](../objects/guild.md) object.
 
 ### Summary
 
-Update a guild. All fields are optional. All fields specified will be overridden.
+Update a guild. All fields are optional. All fields specified will be overridden. Dispatches the [GUILD_UPDATE](../gateway/events.md#guild_update) gateway event.
 
 Note that if you edit the owner of the guild, you will lose permissions to make further edits to it.
 
@@ -70,7 +70,7 @@ The updated [Guild](../objects/guild.md) object.
 
 ### Summary
 
-Deletes a guild.
+Deletes a guild. Dispatches the [GUILD_REMOVE](../gateway/events.md#guild_remove) gateway event.
 
 ### Errors
 
@@ -85,7 +85,7 @@ Deletes a guild.
 
 ### Summary
 
-Creates a channel in a guild.
+Creates a channel in a guild. Dispatches the [CHANNEL_CREATE](../gateway/events.md#channel_create) gateway event.
 
 ### Example Payload
 
@@ -113,7 +113,7 @@ The created [Channel](../objects/channel.md) object.
 
 ### Summary
 
-Adds the currently authenticated user as a member to a guild. If the member is already in the guild, this will simply return the member's data.
+Adds the currently authenticated user as a member to a guild. If the member is already in the guild, this will simply return the member's data. Dispatches the [MEMBER_CREATE](../gateway/events.md#member_create) gateway event.
 
 ### Response
 
@@ -147,7 +147,7 @@ A [Member](../objects/member.md) object.
 
 ### Summary
 
-Removes a member from a guild.
+Removes a member from a guild. Dispatches the [MEMBER_REMOVE](../gateway/events.md#member_remove) gateway event.
 
 > Note: This endpoint currently only supports the use of `@me` as the `user_id`.
 

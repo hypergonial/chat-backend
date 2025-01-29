@@ -1,7 +1,7 @@
 use axum::{
     extract::{DefaultBodyLimit, Multipart, Path, Query, State},
     http::StatusCode,
-    routing::{delete, get, post},
+    routing::{delete, get, patch, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
@@ -11,9 +11,10 @@ use crate::models::{
     auth::Token,
     channel::{Channel, ChannelLike},
     errors::RESTError,
-    gateway_event::GatewayEvent,
+    gateway_event::{GatewayEvent, MessageRemovePayload},
     member::UserLike,
     message::Message,
+    requests::UpdateMessage,
     snowflake::Snowflake,
     state::App,
 };
@@ -35,6 +36,8 @@ pub fn get_router() -> Router<App> {
         .route("/channels/{channel_id}", delete(delete_channel))
         .route("/channels/{channel_id}/messages", post(create_message))
         .route("/channels/{channel_id}/messages", get(fetch_messages))
+        .route("/channels/{channel_id}/messages/{message_id}", patch(update_message))
+        .route("/channels/{channel_id}/messages/{message_id}", delete(delete_message))
         .layer(DefaultBodyLimit::disable())
         .layer(RequestBodyLimitLayer::new(8 * 1024 * 1024 /* 8mb */))
 }
@@ -152,13 +155,127 @@ async fn create_message(
 
     let message = Message::from_formdata(&app.config, UserLike::Member(member), channel_id, payload).await?;
 
-    app.ops().update_message(&message).await?;
+    app.ops().commit_message(&message).await?;
 
     let message = message.strip_attachment_contents();
     let reply = Json(message.clone());
 
     app.gateway.dispatch(GatewayEvent::MessageCreate(message));
     Ok((StatusCode::CREATED, reply))
+}
+
+/// Update a message.
+///
+/// ## Arguments
+///
+/// * `channel_id` - The ID of the channel the message is in
+/// * `message_id` - The ID of the message to update
+/// * `token` - The authorization token
+/// * `payload` - The update payload
+///
+/// ## Returns
+///
+/// * [`Message`] - A JSON response containing the updated [`Message`] object
+///
+/// ## Endpoint
+///
+/// PATCH `/channels/{channel_id}/messages/{message_id}`
+async fn update_message(
+    Path(channel_id): Path<Snowflake<Channel>>,
+    Path(message_id): Path<Snowflake<Message>>,
+    State(app): State<App>,
+    token: Token,
+    Json(payload): Json<UpdateMessage>,
+) -> Result<Json<Message>, RESTError> {
+    let message = app.ops().fetch_message(message_id).await?.ok_or(RESTError::NotFound(
+        "Message does not exist or is not available.".into(),
+    ))?;
+
+    if message.channel_id() != channel_id {
+        return Err(RESTError::NotFound(
+            "Message does not exist or is not available.".into(),
+        ));
+    }
+
+    let channel = app.ops().fetch_channel(channel_id).await.ok_or(RESTError::NotFound(
+        "Channel does not exist or is not available.".into(),
+    ))?;
+
+    let member = app
+        .ops()
+        .fetch_member(token.data().user_id(), channel.guild_id())
+        .await?
+        .ok_or(RESTError::Forbidden("Not permitted to access resource.".into()))?;
+
+    if member.user().id() != message.author().map_or(Snowflake::new(0), UserLike::id) {
+        return Err(RESTError::Forbidden("Not permitted to patch resource.".into()));
+    }
+
+    let msg = payload.perform_request(&app, message_id).await?;
+
+    let reply = Json(msg.clone());
+    app.gateway.dispatch(GatewayEvent::MessageUpdate(msg));
+
+    Ok(reply)
+}
+
+/// Delete a message.
+///
+/// ## Arguments
+///
+/// * `channel_id` - The ID of the channel the message is in
+/// * `message_id` - The ID of the message to delete
+/// * `token` - The authorization token
+///
+/// ## Returns
+///
+/// * [`StatusCode`] - 204 No Content if successful
+///
+/// ## Dispatches
+///
+/// * [`GatewayEvent::MessageDelete`] - To all members who can view the channel
+///
+/// ## Endpoint
+///
+/// DELETE `/channels/{channel_id}/messages/{message_id}`
+async fn delete_message(
+    Path(channel_id): Path<Snowflake<Channel>>,
+    Path(message_id): Path<Snowflake<Message>>,
+    State(app): State<App>,
+    token: Token,
+) -> Result<StatusCode, RESTError> {
+    let message = app.ops().fetch_message(message_id).await?.ok_or(RESTError::NotFound(
+        "Message does not exist or is not available.".into(),
+    ))?;
+
+    let channel = app.ops().fetch_channel(channel_id).await.ok_or(RESTError::NotFound(
+        "Channel does not exist or is not available.".into(),
+    ))?;
+
+    if message.channel_id() != channel_id {
+        return Err(RESTError::NotFound(
+            "Message does not exist or is not available.".into(),
+        ));
+    }
+
+    let member = app
+        .ops()
+        .fetch_member(token.data().user_id(), channel.guild_id())
+        .await?
+        .ok_or(RESTError::Forbidden("Not permitted to access resource.".into()))?;
+
+    if member.user().id() != message.author().map_or(Snowflake::new(0), UserLike::id) {
+        return Err(RESTError::Forbidden("Not permitted to delete resource.".into()));
+    }
+
+    app.gateway
+        .dispatch(GatewayEvent::MessageRemove(MessageRemovePayload::new(
+            message_id,
+            channel_id,
+            Some(channel.guild_id()),
+        )));
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// Fetch a channel's messages.

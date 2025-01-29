@@ -10,7 +10,9 @@ use aws_sdk_s3::{
 use bytes::{Bytes, BytesMut};
 use mime::Mime;
 
-use super::{channel::Channel, errors::AppError, guild::Guild, snowflake::Snowflake, state::ApplicationState};
+use super::{
+    channel::Channel, errors::AppError, guild::Guild, message::Message, snowflake::Snowflake, state::ApplicationState,
+};
 
 pub type S3Client = Client;
 
@@ -104,6 +106,40 @@ impl Buckets {
         }
 
         Ok(())
+    }
+
+    /// Remove all S3 data for the given message.
+    ///
+    /// ## Arguments
+    ///
+    /// * `channel` - The channel the message is in.
+    /// * `message` - The message to remove all data for.
+    ///
+    /// ## Errors
+    ///
+    /// * [`AppError::S3`] - If the S3 request fails.
+    pub async fn remove_all_for_message(
+        &self,
+        channel: impl Into<Snowflake<Channel>>,
+        message: impl Into<Snowflake<Message>>,
+    ) -> Result<(), AppError> {
+        let bucket = self.attachments();
+        let channel_id: Snowflake<Channel> = channel.into();
+        let message_id: Snowflake<Message> = message.into();
+        let attachments = bucket.list_objects(format!("{channel_id}/{message_id}"), None).await?;
+
+        if attachments.is_empty() {
+            return Ok(());
+        }
+
+        bucket
+            .delete_objects(
+                attachments
+                    .into_iter()
+                    .map(|o| o.key.unwrap_or_else(|| message_id.to_string()))
+                    .collect(),
+            )
+            .await
     }
 
     /// Remove all S3 data for the given channel.

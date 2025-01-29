@@ -182,6 +182,9 @@ async fn update_guild(
         return Err(RESTError::Forbidden("Not permitted to update resource.".into()));
     }
     let guild = payload.perform_request(&app, &guild).await?;
+
+    app.gateway.dispatch(GatewayEvent::GuildUpdate(guild.clone()));
+
     Ok(Json(guild))
 }
 

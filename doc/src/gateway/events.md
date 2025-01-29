@@ -24,6 +24,30 @@ Sent when a message is sent in a channel that the currently authenticated user i
 
 A [Message](../objects/message.md) object.
 
+## MESSAGE_UPDATE
+
+### Summary
+
+Sent when a message is updated in a channel that the currently authenticated user is a member of.
+
+### Data
+
+A [Message](../objects/message.md) object.
+
+## MESSAGE_REMOVE
+
+### Summary
+
+Sent when a message is removed in a channel that the currently authenticated user is a member of.
+
+### Data
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `id` | `Snowflake` | The ID of the message that was removed. |
+| `channel_id` | `Snowflake` | The channel's ID the message was part of. |
+| `guild_id` | `Snowflake` | The guild's ID the message was part of. |
+
 ## MEMBER_CREATE
 
 ### Summary
@@ -60,6 +84,16 @@ Sent when a guild is created or on initial connection. The client is expected to
 | `guild` | [`Guild`](../objects/guild.md) | The guild's data. |
 | `members` | [`Member[]`](../objects/member.md) | The guild's members. |
 | `channels` | [`Channel[]`](../objects/channel.md) | The guild's channels. |
+
+## GUILD_UPDATE
+
+### Summary
+
+Sent when a guild is updated.
+
+### Data
+
+A [Guild](../objects/guild.md) object representing the updated guild.
 
 ## GUILD_REMOVE
 

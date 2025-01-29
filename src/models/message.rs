@@ -10,7 +10,7 @@ use super::{
     channel::Channel,
     errors::{BuildError, RESTError},
     member::UserLike,
-    requests::CreateMessage,
+    requests::{CreateMessage, UpdateMessage},
     snowflake::Snowflake,
     state::Config,
     user::User,
@@ -176,6 +176,19 @@ impl Message {
                 })
             })
             .collect()
+    }
+
+    /// Apply an update to the message.
+    ///
+    /// This will update the message with the provided update payload.
+    ///
+    /// ## Parameters
+    ///
+    /// - `payload` - The update message payload
+    pub fn apply_update(&mut self, payload: UpdateMessage) {
+        if let Some(content) = payload.content {
+            self.content = Some(content);
+        }
     }
 
     /// Create a new message from the given formdata. Assigns a new snowflake to the message.

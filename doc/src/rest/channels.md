@@ -23,7 +23,7 @@ A [Channel](../objects/channel.md) object.
 
 ### Summary
 
-Deletes a channel.
+Deletes a channel. Dispatches the [CHANNEL_REMOVE](../gateway/events.md#channel_remove) gateway event.
 
 ### Errors
 
@@ -58,7 +58,7 @@ An array of [Message](../objects/message.md) objects.
 
 ### Summary
 
-Sends a message to a channel.
+Sends a message to a channel. Dispatches the [MESSAGE_CREATE](../gateway/events.md#message_create) gateway event.
 
 ### Payload
 
@@ -107,3 +107,41 @@ The created [Message](../objects/message.md) object.
 | ---- | ----------- |
 | 403  | The user is not in the guild the channel is located in. |
 | 404  | The channel was not found. |
+
+# /channels/\{channel_id\}/messages/\{message_id\}
+
+## PATCH
+
+### Summary
+
+Updates a message with new data. All fields are optional, and all fields specified will overwrite the current values. Dispatches the [MESSAGE_UPDATE](../gateway/events.md#message_update) gateway event.
+
+### Payload
+
+| Name | Type | Description |
+| ---- | ---- | ----------- |
+| content | string? | The new contents of the message. |
+
+### Response
+
+The updated [Message](../objects/message.md) object.
+
+### Errors
+
+| Code | Description |
+| ---- | ----------- |
+| 403  | The user has no permission to update the message. |
+| 404  | The message or channel was not found. |
+
+## DELETE
+
+### Summary
+
+Deletes the message. Dispatches the [MESSAGE_REMOVE](../gateway/events.md#message_remove) gateway event.
+
+### Errors
+
+| Code | Description |
+| ---- | ----------- |
+| 403  | The user has no permission to delete the message. |
+| 404  | The message or channel was not found. |

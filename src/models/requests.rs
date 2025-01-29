@@ -7,6 +7,7 @@ use super::{
     errors::AppError,
     guild::Guild,
     member::Member,
+    message::Message,
     prefs::{Layout, PrefFlags},
     snowflake::Snowflake,
     state::ApplicationState,
@@ -125,6 +126,38 @@ impl UpdateUser {
         user: impl Into<Snowflake<User>>,
     ) -> Result<User, AppError> {
         app.ops().update_user(user, self).await
+    }
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct UpdateMessage {
+    pub content: Option<String>,
+}
+
+impl UpdateMessage {
+    /// Perform the update operation
+    ///
+    /// This is a shorthand for `app.ops().update_message(message, payload).await`
+    ///
+    /// # Parameters
+    ///
+    /// - `app` - The application state
+    /// - `message` - The message to update
+    ///
+    /// # Returns
+    ///
+    /// The updated message
+    ///
+    /// # Errors
+    ///
+    /// Fails if the message does not exist or the update operation fails
+    #[inline]
+    pub async fn perform_request(
+        self,
+        app: &ApplicationState,
+        message: impl Into<Snowflake<Message>>,
+    ) -> Result<Message, AppError> {
+        app.ops().update_message(message, self).await
     }
 }
 
