@@ -21,6 +21,7 @@ pub struct MessageRecord {
     pub id: Snowflake<Message>,
     pub channel_id: Snowflake<Channel>,
     pub user_id: Option<Snowflake<User>>,
+    pub edited: bool,
     pub content: String,
 }
 
@@ -31,6 +32,7 @@ pub struct ExtendedMessageRecord {
     pub channel_id: i64,
     pub content: Option<String>,
     pub user_id: Option<Snowflake<User>>,
+    pub edited: bool,
     pub username: Option<String>,
     pub display_name: Option<String>,
     pub avatar_hash: Option<String>,
@@ -57,6 +59,10 @@ pub struct Message {
     /// The nonce is not stored in the database and thus is not returned by REST calls.
     #[builder(default)]
     nonce: Option<String>,
+
+    /// If true, the message was edited before.
+    #[builder(default = "false")]
+    edited: bool,
 
     /// The content of the message.
     #[builder(default)]
@@ -97,8 +103,14 @@ impl Message {
         self.author.as_ref()
     }
 
+    /// The ID of the channel this message was sent in.
     pub const fn channel_id(&self) -> Snowflake<Channel> {
         self.channel_id
+    }
+
+    /// If true, the message was edited before.
+    pub const fn edited(&self) -> bool {
+        self.edited
     }
 
     /// The time at which this message was sent.
@@ -169,6 +181,7 @@ impl Message {
                 Ok(Self {
                     id: group[0].id.into(),
                     channel_id: group[0].channel_id.into(),
+                    edited: group[0].edited,
                     author,
                     content: group[0].content.clone(),
                     nonce: None,
@@ -188,6 +201,7 @@ impl Message {
     pub fn apply_update(&mut self, payload: UpdateMessage) {
         if let Some(content) = payload.content {
             self.content = Some(content);
+            self.edited = true;
         }
     }
 

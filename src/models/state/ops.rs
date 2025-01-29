@@ -481,14 +481,15 @@ impl<'a> Ops<'a> {
     /// * [`AppError::Database`] - If the database request fails.
     pub async fn commit_message(&self, message: &Message) -> Result<(), AppError> {
         sqlx::query!(
-            "INSERT INTO messages (id, user_id, channel_id, content)
-            VALUES ($1, $2, $3, $4)
+            "INSERT INTO messages (id, user_id, channel_id, content, edited)
+            VALUES ($1, $2, $3, $4, $5)
             ON CONFLICT (id) DO UPDATE
-            SET user_id = $2, channel_id = $3, content = $4",
+            SET user_id = $2, channel_id = $3, content = $4, edited = $5",
             message.id() as Snowflake<Message>,
             message.author().map(UserLike::id) as Option<Snowflake<User>>,
             message.channel_id() as Snowflake<Channel>,
             message.content(),
+            message.edited(),
         )
         .execute(self.app.db.pool())
         .await?;

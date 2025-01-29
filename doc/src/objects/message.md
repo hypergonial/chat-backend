@@ -12,6 +12,7 @@ Represents a text message sent to a [channel](channel.md).
 | content | `String` | The message's content |
 | nonce | `String?` | The message's nonce, this may be used by clients to identify their sent messages. It is `null` in all cases except in the `MESSAGE_CREATE` gateway event. |
 | attachments | [`Attachment`](attachment.md)[] | The message's attachments. |
+| edited | `boolean` | Whether the message has been edited. |
 
 ## Example payload
 
@@ -32,6 +33,7 @@ Represents a text message sent to a [channel](channel.md).
     },
     "content": "sus",
     "nonce": "catch me catch me catch me catch..",
+    "edited": false,
     "attachments": [
         {
             "id": 0,
