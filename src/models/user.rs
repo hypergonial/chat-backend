@@ -133,8 +133,8 @@ impl User {
     }
 
     /// Retrieve the user's presence.
-    pub fn presence(&self, gateway: &Gateway) -> &Presence {
-        if gateway.is_connected(self.id()) {
+    pub async fn presence(&self, gateway: &Gateway) -> &Presence {
+        if gateway.is_connected(self.id()).await {
             &self.last_presence
         } else {
             &Presence::Offline
@@ -225,8 +225,8 @@ impl User {
 
     /// Transform this object to also include the user's presence.
     #[must_use]
-    pub fn include_presence(self, gateway: &Gateway) -> Self {
-        let presence = self.presence(gateway);
+    pub async fn include_presence(self, gateway: &Gateway) -> Self {
+        let presence = self.presence(gateway).await;
         Self {
             displayed_presence: Some(*presence),
             ..self

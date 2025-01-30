@@ -64,6 +64,7 @@ aws-sdk-s3 = "1.71"
 secrecy = { version = "0.8", features = ["serde"] }
 argon2 = { version = "0.5", features = ["std"] }
 bitflags = { version = "2.6", features = ["serde"] }
+uuid = { version = "1.12", features = ["v4"] }
 futures = "0.3"
 futures-util = "0.3"
 jsonwebtoken = "9.3"

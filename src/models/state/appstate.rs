@@ -18,7 +18,6 @@ pub type App = Arc<ApplicationState>;
 pub type S3Client = Client;
 
 /// Contains all the application state and manages application state changes.
-#[derive(Clone)]
 pub struct ApplicationState {
     pub db: Database,
     pub gateway: Gateway,
@@ -83,7 +82,7 @@ impl ApplicationState {
 
     /// Closes the application and cleans up resources.
     pub async fn close(&self) {
-        self.gateway.close();
+        self.gateway.stop().await;
         self.db.close().await;
     }
 

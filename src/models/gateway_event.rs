@@ -1,3 +1,4 @@
+use futures::future::join_all;
 use secrecy::Secret;
 use serde::{Deserialize, Serialize};
 
@@ -232,13 +233,14 @@ impl GuildCreatePayload {
     /// * [`sqlx::Error`] - If the database query fails.
     pub async fn from_guild(app: &ApplicationState, guild: Guild) -> Result<Self, AppError> {
         // Presences need to be included in the payload
-        let members = app
-            .ops()
-            .fetch_members_for(&guild)
-            .await?
-            .into_iter()
-            .map(|m| m.include_presence(&app.gateway))
-            .collect();
+        let members = join_all(
+            app.ops()
+                .fetch_members_for(&guild)
+                .await?
+                .into_iter()
+                .map(|m| m.include_presence(&app.gateway)),
+        )
+        .await;
 
         let channels = app.ops().fetch_channels_for(&guild).await?;
         Ok(Self::new(guild, members, channels))
