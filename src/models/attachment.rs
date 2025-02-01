@@ -298,7 +298,7 @@ impl PartialAttachment {
             i32::from(id),
             message_id
         )
-        .fetch_optional(app.db.pool())
+        .fetch_optional(app.db())
         .await?
         .map(Into::into))
     }
@@ -322,7 +322,7 @@ impl PartialAttachment {
             WHERE message_id = $1",
             message_id
         )
-        .fetch_all(app.db.pool())
+        .fetch_all(app.db())
         .await?
         .into_iter()
         .map(Into::into)

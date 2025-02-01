@@ -153,6 +153,7 @@ async fn fetch_self_guilds(State(app): State<App>, token: Token) -> Result<Json<
 /// ## Endpoint
 ///
 /// PATCH `/users/@me/presence`
+// TODO: Remove this endpoint in favour of sending presence updates over the gateway
 pub async fn update_presence(
     State(app): State<App>,
     token: Token,
@@ -165,11 +166,11 @@ pub async fn update_presence(
         new_presence as i16,
         user_id_i64
     )
-    .execute(app.db.pool())
+    .execute(app.db())
     .await?;
 
-    if app.gateway.is_connected(token.data().user_id()).await {
-        app.gateway
+    if app.gateway().is_connected(token.data().user_id()).await {
+        app.gateway()
             .dispatch(GatewayEvent::PresenceUpdate(PresenceUpdatePayload {
                 presence: new_presence,
                 user_id: token.data().user_id(),
@@ -224,7 +225,7 @@ pub async fn update_self(
 /// GET `/users/{username}`
 pub async fn query_username(State(app): State<App>, Path(username): Path<String>) -> Result<StatusCode, RESTError> {
     sqlx::query!("SELECT id FROM users WHERE username = $1", username)
-        .fetch_optional(app.db.pool())
+        .fetch_optional(app.db())
         .await?
         .ok_or(RESTError::NotFound("User not found".into()))?;
 

@@ -114,7 +114,7 @@ async fn delete_channel(
 
     app.ops().delete_channel(&channel).await?;
 
-    app.gateway.dispatch(GatewayEvent::ChannelRemove(channel));
+    app.gateway().dispatch(GatewayEvent::ChannelRemove(channel));
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -160,7 +160,7 @@ async fn create_message(
     let message = message.strip_attachment_contents();
     let reply = Json(message.clone());
 
-    app.gateway.dispatch(GatewayEvent::MessageCreate(message));
+    app.gateway().dispatch(GatewayEvent::MessageCreate(message));
     Ok((StatusCode::CREATED, reply))
 }
 
@@ -213,7 +213,7 @@ async fn update_message(
     let msg = payload.perform_request(&app, message_id).await?;
 
     let reply = Json(msg.clone());
-    app.gateway.dispatch(GatewayEvent::MessageUpdate(msg));
+    app.gateway().dispatch(GatewayEvent::MessageUpdate(msg));
 
     Ok(reply)
 }
@@ -266,7 +266,7 @@ async fn delete_message(
         return Err(RESTError::Forbidden("Not permitted to delete resource.".into()));
     }
 
-    app.gateway
+    app.gateway()
         .dispatch(GatewayEvent::MessageRemove(MessageRemovePayload::new(
             message_id,
             channel_id,

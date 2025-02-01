@@ -1,4 +1,7 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::{
+    net::SocketAddr,
+    sync::{Arc, OnceLock},
+};
 
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::{
@@ -19,10 +22,10 @@ pub type S3Client = Client;
 
 /// Contains all the application state and manages application state changes.
 pub struct ApplicationState {
-    pub db: Database,
-    pub gateway: Gateway,
+    db: Database,
+    gateway: OnceLock<Gateway>,
     pub config: Config,
-    pub s3: Buckets,
+    s3: Buckets,
 }
 
 impl ApplicationState {
@@ -54,19 +57,29 @@ impl ApplicationState {
 
         let mut state = Self {
             db: Database::new(),
+            gateway: OnceLock::new(),
             config,
-            gateway: Gateway::new(),
             s3: buckets,
         };
 
         state.init().await?;
 
-        Ok(Arc::new_cyclic(|w| {
+        let shared_state = Arc::new_cyclic(|w| {
             state.db.bind_to(w.clone());
-            state.gateway.bind_to(w.clone());
             state.s3.bind_to(w.clone());
             state
-        }))
+        });
+
+        // The gateway needs the shared state to be initialized, but that only happens
+        // after the closure in new_cyclic returns. So we work around this with a OnceLock.
+        shared_state.gateway.get_or_init(|| {
+            let mut gateway = Gateway::new();
+            gateway.bind_to(Arc::downgrade(&shared_state));
+            gateway.start();
+            gateway
+        });
+
+        Ok(shared_state)
     }
 
     /// Initializes the application
@@ -80,10 +93,30 @@ impl ApplicationState {
         Ok(())
     }
 
+    /// The gateway instance of the application.
+    #[inline]
+    pub fn gateway(&self) -> &Gateway {
+        self.gateway
+            .get()
+            .expect("Gateway not initialized, this should be impossible")
+    }
+
+    /// The S3 client instance of the application.
+    #[inline]
+    pub const fn s3(&self) -> &Buckets {
+        &self.s3
+    }
+
+    /// The database instance of the application.
+    #[inline]
+    pub const fn db(&self) -> &Database {
+        &self.db
+    }
+
     /// Closes the application and cleans up resources.
     pub async fn close(&self) {
-        self.gateway.stop().await;
-        self.db.close().await;
+        self.gateway().stop().await;
+        self.db().close().await;
     }
 
     #[inline]

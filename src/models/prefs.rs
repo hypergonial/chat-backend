@@ -137,7 +137,7 @@ impl Prefs {
             WHERE user_id = $1",
             user_id_i64
         )
-        .fetch_optional(app.db.pool())
+        .fetch_optional(app.db())
         .await?;
 
         let Some(result) = result else {
@@ -180,7 +180,7 @@ impl Prefs {
             i16::from(self.text_size),
             self.locale,
         )
-        .execute(app.db.pool())
+        .execute(app.db())
         .await?;
 
         Ok(())

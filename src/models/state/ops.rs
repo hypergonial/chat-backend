@@ -41,7 +41,7 @@ impl<'a> Ops<'a> {
             "SELECT * FROM channels WHERE id = $1",
             id.into() as Snowflake<Channel>
         )
-        .fetch_optional(self.app.db.pool())
+        .fetch_optional(self.app.db())
         .await
         .ok()??;
 
@@ -63,7 +63,7 @@ impl<'a> Ops<'a> {
             channel.name(),
             channel.channel_type(),
         )
-        .fetch_one(self.app.db.pool())
+        .fetch_one(self.app.db())
         .await
         .map(Channel::from_record)
     }
@@ -79,7 +79,7 @@ impl<'a> Ops<'a> {
             channel.id() as Snowflake<Channel>,
             channel.name()
         )
-        .execute(self.app.db.pool())
+        .execute(self.app.db())
         .await?;
 
         Ok(())
@@ -98,10 +98,10 @@ impl<'a> Ops<'a> {
     pub async fn delete_channel(&self, channel: impl Into<Snowflake<Channel>>) -> Result<(), AppError> {
         let channel_id: Snowflake<Channel> = channel.into();
 
-        self.app.s3.remove_all_for_channel(channel_id).await?;
+        self.app.s3().remove_all_for_channel(channel_id).await?;
 
         sqlx::query!("DELETE FROM channels WHERE id = $1", channel_id as Snowflake<Channel>)
-            .execute(self.app.db.pool())
+            .execute(self.app.db())
             .await?;
 
         Ok(())
@@ -144,7 +144,7 @@ impl<'a> Ops<'a> {
                 channel.into() as Snowflake<Channel>,
                 i64::from(limit)
             )
-            .fetch_all(self.app.db.pool())
+            .fetch_all(self.app.db())
             .await?
         } else {
             sqlx::query_as_unchecked!(
@@ -160,7 +160,7 @@ impl<'a> Ops<'a> {
                 after.map_or(i64::MIN, Into::into),
                 i64::from(limit)
             )
-            .fetch_all(self.app.db.pool())
+            .fetch_all(self.app.db())
             .await?
         };
         Ok(Message::from_records(&records)?)
@@ -177,7 +177,7 @@ impl<'a> Ops<'a> {
             "SELECT id, name, owner_id, avatar_hash FROM guilds WHERE id = $1",
             guild.into() as Snowflake<Guild>,
         )
-        .fetch_optional(self.app.db.pool())
+        .fetch_optional(self.app.db())
         .await
         .ok()??;
 
@@ -211,7 +211,7 @@ impl<'a> Ops<'a> {
             WHERE members.guild_id = $1",
             guild.into() as Snowflake<Guild>
         )
-        .fetch_all(self.app.db.pool())
+        .fetch_all(self.app.db())
         .await?;
 
         records
@@ -232,7 +232,7 @@ impl<'a> Ops<'a> {
             "SELECT * FROM channels WHERE guild_id = $1",
             guild.into() as Snowflake<Guild>
         )
-        .fetch_all(self.app.db.pool())
+        .fetch_all(self.app.db())
         .await?;
 
         Ok(records.into_iter().map(Channel::from_record).collect())
@@ -260,7 +260,7 @@ impl<'a> Ops<'a> {
             guild.into() as Snowflake<Guild>,
             Utc::now().timestamp(),
         )
-        .fetch_one(self.app.db.pool())
+        .fetch_one(self.app.db())
         .await?;
         Ok(Member::from_record(user, record))
     }
@@ -284,7 +284,7 @@ impl<'a> Ops<'a> {
             user_id as Snowflake<User>,
             guild.id() as Snowflake<Guild>,
         )
-        .execute(self.app.db.pool())
+        .execute(self.app.db())
         .await?;
         Ok(())
     }
@@ -318,7 +318,7 @@ impl<'a> Ops<'a> {
             user.into() as Snowflake<User>,
             guild.into() as Snowflake<Guild>,
         )
-        .fetch_optional(self.app.db.pool())
+        .fetch_optional(self.app.db())
         .await?;
 
         record.map(Member::from_extended_record).transpose().map_err(Into::into)
@@ -340,7 +340,7 @@ impl<'a> Ops<'a> {
             member.nickname().as_ref(),
             member.joined_at()
         )
-        .execute(self.app.db.pool())
+        .execute(self.app.db())
         .await?;
 
         //self.app.ops().update_user(member.user()).await?;
@@ -374,7 +374,7 @@ impl<'a> Ops<'a> {
             guild.name(),
             guild.owner_id() as Snowflake<User>,
         )
-        .execute(self.app.db.pool())
+        .execute(self.app.db())
         .await?;
 
         let member = self.create_member(&guild, guild.owner_id()).await?;
@@ -398,9 +398,9 @@ impl<'a> Ops<'a> {
         }
 
         if old_guild.avatar() != guild.avatar() {
-            old_guild.avatar().map(|a| async { a.delete(&self.app.s3).await });
+            old_guild.avatar().map(|a| async { a.delete(self.app.s3()).await });
             match guild.avatar() {
-                Some(Avatar::Full(f)) => f.upload(&self.app.s3).await?,
+                Some(Avatar::Full(f)) => f.upload(self.app.s3()).await?,
                 _ => {
                     Err(BuildError::ValidationError("Cannot upload partial avatar".into()))?;
                 }
@@ -417,7 +417,7 @@ impl<'a> Ops<'a> {
             guild.owner_id() as Snowflake<User>,
             guild.avatar().map(AvatarLike::avatar_hash),
         )
-        .fetch_one(self.app.db.pool())
+        .fetch_one(self.app.db())
         .await?;
         Ok(Guild::from_record(record))
     }
@@ -431,10 +431,10 @@ impl<'a> Ops<'a> {
     pub async fn delete_guild(&self, guild: impl Into<Snowflake<Guild>>) -> Result<(), AppError> {
         let guild_id: Snowflake<Guild> = guild.into();
 
-        self.app.s3.remove_all_for_guild(guild_id).await?;
+        self.app.s3().remove_all_for_guild(guild_id).await?;
 
         sqlx::query!("DELETE FROM guilds WHERE id = $1", guild_id as Snowflake<Guild>)
-            .execute(self.app.db.pool())
+            .execute(self.app.db())
             .await?;
         Ok(())
     }
@@ -465,7 +465,7 @@ impl<'a> Ops<'a> {
             WHERE messages.id = $1",
             message.into() as Snowflake<Message>
         )
-        .fetch_all(self.app.db.pool())
+        .fetch_all(self.app.db())
         .await?;
 
         Ok(Message::from_records(&records)?.pop())
@@ -491,7 +491,7 @@ impl<'a> Ops<'a> {
             message.content(),
             message.edited(),
         )
-        .execute(self.app.db.pool())
+        .execute(self.app.db())
         .await?;
 
         for attachment in message.attachments() {
@@ -553,10 +553,10 @@ impl<'a> Ops<'a> {
         let message_id = message.into();
 
         sqlx::query!("DELETE FROM messages WHERE id = $1", message_id as Snowflake<Message>)
-            .execute(self.app.db.pool())
+            .execute(self.app.db())
             .await?;
 
-        self.app.s3.remove_all_for_message(channel, message_id).await?;
+        self.app.s3().remove_all_for_message(channel, message_id).await?;
 
         Ok(())
     }
@@ -578,7 +578,7 @@ impl<'a> Ops<'a> {
             WHERE id = $1",
             user.into() as Snowflake<User>
         )
-        .fetch_optional(self.app.db.pool())
+        .fetch_optional(self.app.db())
         .await
         .ok()??;
 
@@ -601,7 +601,7 @@ impl<'a> Ops<'a> {
             WHERE id = $1",
             user.into() as Snowflake<User>
         )
-        .fetch_optional(self.app.db.pool())
+        .fetch_optional(self.app.db())
         .await
         .ok()??;
 
@@ -626,7 +626,7 @@ impl<'a> Ops<'a> {
             LIMIT 1",
             username
         )
-        .fetch_optional(self.app.db.pool())
+        .fetch_optional(self.app.db())
         .await
         .ok()??;
 
@@ -647,7 +647,7 @@ impl<'a> Ops<'a> {
             WHERE members.user_id = $1",
             user.into() as Snowflake<User>
         )
-        .fetch_all(self.app.db.pool())
+        .fetch_all(self.app.db())
         .await?;
 
         Ok(records.into_iter().map(Guild::from_record).collect())
@@ -673,7 +673,7 @@ impl<'a> Ops<'a> {
             WHERE user_id = $1",
             user.into() as Snowflake<User>
         )
-        .fetch_all(self.app.db.pool())
+        .fetch_all(self.app.db())
         .await?;
 
         Ok(records.into_iter().map(|r| r.guild_id.into()).collect())
@@ -693,7 +693,7 @@ impl<'a> Ops<'a> {
             user.id() as Snowflake<User>,
             payload.username,
         )
-        .execute(self.app.db.pool())
+        .execute(self.app.db())
         .await?;
 
         Ok(user)
@@ -731,9 +731,9 @@ impl<'a> Ops<'a> {
         }
 
         if old_user.avatar() != user.avatar() {
-            old_user.avatar().map(|a| async { a.delete(&self.app.s3).await });
+            old_user.avatar().map(|a| async { a.delete(self.app.s3()).await });
             match user.avatar() {
-                Some(Avatar::Full(f)) => f.upload(&self.app.s3).await?,
+                Some(Avatar::Full(f)) => f.upload(self.app.s3()).await?,
                 _ => {
                     Err(BuildError::ValidationError("Cannot upload partial avatar".into()))?;
                 }
@@ -750,7 +750,7 @@ impl<'a> Ops<'a> {
             *user.last_presence() as i16,
             user.avatar().map(AvatarLike::avatar_hash),
         )
-        .fetch_one(self.app.db.pool())
+        .fetch_one(self.app.db())
         .await?;
         Ok(User::from_record(record))
     }
@@ -761,7 +761,7 @@ impl<'a> Ops<'a> {
     ///
     /// * [`AppError::S3`] - If the S3 request fails.
     pub async fn create_attachment(&self, attachment: &FullAttachment) -> Result<(), AppError> {
-        attachment.upload(&self.app.s3).await?;
+        attachment.upload(self.app.s3()).await?;
 
         sqlx::query!(
             "INSERT INTO attachments (id, filename, message_id, channel_id, content_type)
@@ -774,7 +774,7 @@ impl<'a> Ops<'a> {
             attachment.channel_id() as Snowflake<Channel>,
             attachment.mime().to_string(),
         )
-        .execute(self.app.db.pool())
+        .execute(self.app.db())
         .await?;
 
         Ok(())

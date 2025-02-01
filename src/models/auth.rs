@@ -278,7 +278,7 @@ impl StoredCredentials {
             WHERE user_id = $1",
             user_id
         )
-        .fetch_optional(app.db.pool())
+        .fetch_optional(app.db())
         .await
         .ok()??;
 
@@ -306,7 +306,7 @@ impl StoredCredentials {
             WHERE users.username = $1",
             username
         )
-        .fetch_optional(app.db.pool())
+        .fetch_optional(app.db())
         .await
         .ok()??;
 
@@ -333,7 +333,7 @@ impl StoredCredentials {
             self.hash.expose_secret(),
             self.last_changed.timestamp()
         )
-        .execute(app.db.pool())
+        .execute(app.db())
         .await?;
 
         Ok(())

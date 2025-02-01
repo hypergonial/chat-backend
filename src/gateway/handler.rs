@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
+    fmt::{self, Display, Formatter},
     sync::{Arc, Weak},
     time::Duration,
 };
@@ -141,6 +142,12 @@ impl Serialize for GatewayCloseCode {
 
 #[derive(Debug, Clone, Copy)]
 pub struct ConnectionId(pub Snowflake<User>, pub Uuid);
+
+impl Display for ConnectionId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}-{}", self.0, self.1)
+    }
+}
 
 #[derive(Debug, Clone)]
 struct ConnectionInfo {
@@ -343,13 +350,13 @@ enum Instruction {
 }
 
 #[derive(Debug)]
-struct GatewayInner {
+struct GatewayActor {
     receiver: mpsc::UnboundedReceiver<Instruction>,
     peers: HashMap<Snowflake<User>, ConnectionInfo>,
     app: Weak<ApplicationState>,
 }
 
-impl GatewayInner {
+impl GatewayActor {
     fn new(app: Weak<ApplicationState>, receiver: mpsc::UnboundedReceiver<Instruction>) -> Self {
         Self {
             app,
@@ -408,7 +415,7 @@ impl GatewayInner {
                 "SELECT guild_id FROM members WHERE user_id = $1",
                 id.0 as Snowflake<User>
             )
-            .fetch_all(self.app().db.pool())
+            .fetch_all(self.app().db())
             .await
             .expect("Failed to fetch guilds during socket connection handling")
             .into_iter()
@@ -524,7 +531,7 @@ impl GatewayInner {
         };
 
         if let Err(err) = handle.send(event) {
-            tracing::warn!(error = %err, "Error sending event to session: {}-{}", &id.0, id.1);
+            tracing::warn!(error = %err, "Error sending event to session: {id}");
             self.remove_handle(id);
         }
     }
@@ -610,7 +617,10 @@ impl GatewayInner {
     }
 }
 
-/// A singleton representing the gateway state
+/// The gateway actor handle that can be used to manage gateway state.
+///
+/// All operations are queued to be executed on the internal gateway actor,
+/// and thus are not async, unless they require a response.
 #[derive(Debug)]
 pub struct Gateway {
     sender: Option<mpsc::UnboundedSender<Instruction>>,
@@ -631,10 +641,22 @@ impl Gateway {
         self.app = app;
     }
 
+    /// Start the gateway
+    ///
+    /// Starts the internal gateway actor and begins processing messages
     pub fn start(&mut self) {
+        assert!(
+            self.app.upgrade().is_some(),
+            "Gateway is not bound to an ApplicationState, cannot start"
+        );
+
+        if let Some(a) = self.task.as_ref() {
+            a.abort();
+        }
+
         let (sender, receiver) = mpsc::unbounded_channel();
 
-        let mut inner = GatewayInner::new(self.app.clone(), receiver);
+        let mut inner = GatewayActor::new(self.app.clone(), receiver);
 
         self.task = Some(tokio::spawn(async move {
             inner.run().await;
@@ -642,6 +664,9 @@ impl Gateway {
         self.sender = Some(sender);
     }
 
+    /// Gracefully stop the gateway.
+    ///
+    /// This sends a close request to the gateway actor and waits for it to close.
     pub async fn stop(&self) {
         let Some(sender) = &self.sender else { return };
 
@@ -654,21 +679,39 @@ impl Gateway {
         rx.await.expect("Failed to close gateway");
     }
 
+    /// Abort the gateway.
+    ///
+    /// This will immediately stop the gateway without waiting for it to close.
     pub fn abort(&mut self) {
         if let Some(a) = self.task.take() {
             a.abort();
         }
     }
 
+    pub const fn is_started(&self) -> bool {
+        self.sender.is_some() && self.task.is_some()
+    }
+
+    /// Send an instruction to the inner actor
+    ///
+    /// ## Arguments
+    ///
+    /// * `instruction` - The instruction to send
     fn send_instruction(&self, instruction: Instruction) {
-        self.sender.as_ref().map(|a| a.send(instruction));
+        if let Some(sender) = &self.sender {
+            sender.send(instruction).expect("Failed to send instruction to gateway");
+        } else {
+            panic!("Gateway is not running");
+        }
     }
 
     /// Add a new connection handle to the gateway state
     ///
     /// ## Arguments
     ///
-    /// * `user_id` - The ID of the user to add
+    /// * `id` - The composite session ID to bind this session to.
+    ///   The first part of the ID should be the user it belongs to,
+    ///   the second part should be a unique identifier of this session.
     /// * `handle` - The connection handle to add
     ///
     /// ## Locks
@@ -892,7 +935,7 @@ async fn handle_handshake(
     };
 
     let Message::Text(text) = ident else {
-        send_close_frame(ws_sink, GatewayCloseCode::InvalidPayload, "Invalid IDENTIFY payload").await?;
+        send_close_frame(ws_sink, GatewayCloseCode::Unsupported, "Unsupported message encoding").await?;
         return Err(GatewayError::MalformedFrame("Invalid IDENTIFY payload".into()));
     };
 
@@ -957,11 +1000,11 @@ async fn handle_heartbeating(
                 _ => "Unknown error".into(),
             };
 
-            app.gateway.close_session(id, close_code, reason);
+            app.gateway().close_session(id, close_code, reason);
             break;
         }
 
-        app.gateway.send_to_session(id, GatewayEvent::HeartbeatAck);
+        app.gateway().send_to_session(id, GatewayEvent::HeartbeatAck);
     }
 }
 
@@ -1003,7 +1046,7 @@ async fn send_ready(
     match user.last_presence() {
         Presence::Offline => {}
         _ => {
-            app.gateway
+            app.gateway()
                 .dispatch(GatewayEvent::PresenceUpdate(PresenceUpdatePayload {
                     user_id: user.id(),
                     presence: *user.last_presence(),
@@ -1051,7 +1094,7 @@ async fn send_events(
 /// * `ws_stream` - The stream for receiving messages from the user
 /// * `ws_sink` - The sink for sending messages to the user
 async fn receive_events(
-    user_id: Snowflake<User>,
+    conn_id: ConnectionId,
     mut ws_stream: SplitStream<WebSocket>,
     ws_sink: Arc<Mutex<SplitSink<WebSocket, Message>>>,
     broadcaster: Arc<broadcast::Sender<GatewayMessage>>,
@@ -1059,7 +1102,7 @@ async fn receive_events(
     while let Some(msg) = ws_stream.next().await {
         // Close if the user sends a close frame
         if let Ok(Message::Close(f)) = msg {
-            tracing::debug!(close_frame = ?f, "Gateway stream closed by {user_id}: {f:?}");
+            tracing::debug!(close_frame = ?f, "Gateway stream closed by {conn_id}: {f:?}");
             break;
         }
         // Otherwise attempt to parse the message and send it
@@ -1075,8 +1118,7 @@ async fn receive_events(
         };
 
         match serde_json::from_str::<GatewayRequest>(&text) {
-            Ok(req) => {
-                let GatewayRequest::Message(msg) = req;
+            Ok(GatewayRequest::Message(msg)) => {
                 broadcaster.send(msg).ok();
             }
             Err(e) => {
@@ -1101,6 +1143,14 @@ async fn receive_events(
 /// * `socket` - The websocket connection to handle
 async fn handle_connection(app: App, socket: WebSocket) {
     let (mut ws_sink, mut ws_stream) = socket.split();
+
+    if !app.gateway().is_started() {
+        send_close_frame(&mut ws_sink, GatewayCloseCode::ServiceRestart, "Gateway is restarting")
+            .await
+            .ok();
+        return;
+    }
+
     // Handle handshake and get user
     let Ok(user) = handle_handshake(app.clone(), &mut ws_sink, &mut ws_stream).await else {
         ws_sink
@@ -1112,19 +1162,21 @@ async fn handle_connection(app: App, socket: WebSocket) {
         return;
     };
 
-    tracing::debug!(?user, "Connected: {} ({})", user.username(), user.id());
+    // Assign new session ID to this connection
+    let conn_id = ConnectionId(user.id(), Uuid::new_v4());
+
+    tracing::debug!(?user, "Connected: {} ({})", user.username(), conn_id);
 
     let (sender, receiver) = mpsc::unbounded_channel::<GatewayResponse>();
     let (broadcaster, _) = broadcast::channel::<GatewayMessage>(100);
     let broadcaster = Arc::new(broadcaster);
 
     let handle = ConnectionHandle::new(sender);
-    let conn_id = ConnectionId(user.id(), Uuid::new_v4());
 
     // Add user to peermap
-    app.gateway.create_session(conn_id, handle);
+    app.gateway().create_session(conn_id, handle);
 
-    let user = user.include_presence(&app.gateway).await;
+    let user = user.include_presence(app.gateway()).await;
     let user_id = user.id();
 
     // We want to use the same sink in multiple tasks, so we wrap it in an Arc<Mutex>
@@ -1140,7 +1192,7 @@ async fn handle_connection(app: App, socket: WebSocket) {
         ws_sink.clone(),
     ))
     .abort_on_drop();
-    let receive_events = tokio::spawn(receive_events(user_id, ws_stream, ws_sink, broadcaster.clone())).abort_on_drop();
+    let receive_events = tokio::spawn(receive_events(conn_id, ws_stream, ws_sink, broadcaster.clone())).abort_on_drop();
     let handle_heartbeat = tokio::spawn(handle_heartbeating(
         broadcaster.clone(),
         app.clone(),
@@ -1163,8 +1215,8 @@ async fn handle_connection(app: App, socket: WebSocket) {
     }
 
     // Disconnection logic
-    app.gateway.remove_session(conn_id);
-    tracing::debug!(?user, "Disconnected: {} ({})", user.username(), user.id());
+    app.gateway().remove_session(conn_id);
+    tracing::debug!(?user, "Disconnected: {} ({})", user.username(), conn_id);
 
     // Refetch presence in case it changed
     let presence = app.ops().fetch_presence(&user).await.expect("Failed to fetch presence");
@@ -1173,7 +1225,7 @@ async fn handle_connection(app: App, socket: WebSocket) {
     match presence {
         Presence::Offline => {}
         _ => {
-            app.gateway
+            app.gateway()
                 .dispatch(GatewayEvent::PresenceUpdate(PresenceUpdatePayload {
                     user_id: user.id(),
                     presence: Presence::Offline,

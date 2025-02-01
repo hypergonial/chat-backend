@@ -61,13 +61,14 @@ async fn create_guild(
 ) -> Result<(StatusCode, Json<Guild>), RESTError> {
     let (guild, general, owner) = payload.perform_request(&app, token.data().user_id()).await?;
 
-    app.gateway.add_member(token.data().user_id(), &guild);
+    app.gateway().add_member(token.data().user_id(), &guild);
 
-    app.gateway.dispatch(GatewayEvent::GuildCreate(GuildCreatePayload::new(
-        guild.clone(),
-        vec![owner],
-        vec![general],
-    )));
+    app.gateway()
+        .dispatch(GatewayEvent::GuildCreate(GuildCreatePayload::new(
+            guild.clone(),
+            vec![owner],
+            vec![general],
+        )));
 
     Ok((StatusCode::CREATED, Json(guild)))
 }
@@ -111,7 +112,7 @@ async fn create_channel(
 
     app.ops().create_channel(&channel).await?;
 
-    app.gateway.dispatch(GatewayEvent::ChannelCreate(channel.clone()));
+    app.gateway().dispatch(GatewayEvent::ChannelCreate(channel.clone()));
 
     Ok((StatusCode::CREATED, Json(channel)))
 }
@@ -183,7 +184,7 @@ async fn update_guild(
     }
     let guild = payload.perform_request(&app, &guild).await?;
 
-    app.gateway.dispatch(GatewayEvent::GuildUpdate(guild.clone()));
+    app.gateway().dispatch(GatewayEvent::GuildUpdate(guild.clone()));
 
     Ok(Json(guild))
 }
@@ -215,7 +216,7 @@ async fn delete_guild(
 
     app.ops().delete_guild(&guild).await?;
 
-    app.gateway.dispatch(GatewayEvent::GuildRemove(guild));
+    app.gateway().dispatch(GatewayEvent::GuildRemove(guild));
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -327,13 +328,13 @@ async fn create_member(
     let gc_payload = GatewayEvent::GuildCreate(GuildCreatePayload::from_guild(&app, guild).await?);
 
     // Send GUILD_CREATE to the user who joined
-    app.gateway.send_to(&member, gc_payload);
+    app.gateway().send_to(&member, gc_payload);
 
     // Add the member to the gateway's cache
-    app.gateway.add_member(&member, guild_id);
+    app.gateway().add_member(&member, guild_id);
 
     // Dispatch the member create event to all guild members
-    app.gateway.dispatch(GatewayEvent::MemberCreate(member.clone()));
+    app.gateway().dispatch(GatewayEvent::MemberCreate(member.clone()));
 
     Ok((StatusCode::CREATED, Json(member)))
 }
@@ -380,14 +381,14 @@ async fn leave_guild(
     app.ops().delete_member(&guild, token.data().user_id()).await?;
 
     // Remove the member from the gateway's sessions
-    app.gateway.remove_member(token.data().user_id(), guild_id);
+    app.gateway().remove_member(token.data().user_id(), guild_id);
 
     // Send GUILD_REMOVE to the user who left
-    app.gateway
+    app.gateway()
         .send_to(member.user().id(), GatewayEvent::GuildRemove(guild));
 
     // Dispatch the member remove event
-    app.gateway.dispatch(GatewayEvent::MemberRemove(DeletePayload::new(
+    app.gateway().dispatch(GatewayEvent::MemberRemove(DeletePayload::new(
         member.user().id(),
         Some(member.guild_id()),
     )));

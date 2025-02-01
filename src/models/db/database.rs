@@ -1,6 +1,6 @@
 use std::sync::{Arc, Weak};
 
-use sqlx::{migrate, postgres::PgPool};
+use sqlx::{migrate, postgres::PgPool, Executor};
 
 use crate::models::state::ApplicationState;
 
@@ -67,6 +67,60 @@ impl Database {
     /// Closes the database connection
     pub async fn close(&self) {
         self.pool().close().await;
+    }
+}
+
+// Allow the Database instance to be used as an executor directly
+impl<'c> Executor<'c> for &Database {
+    type Database = sqlx::Postgres;
+
+    fn fetch_many<'e, 'q: 'e, E>(
+        self,
+        query: E,
+    ) -> futures::stream::BoxStream<
+        'e,
+        Result<
+            sqlx::Either<<Self::Database as sqlx::Database>::QueryResult, <Self::Database as sqlx::Database>::Row>,
+            sqlx::Error,
+        >,
+    >
+    where
+        'c: 'e,
+        E: 'q + sqlx::Execute<'q, Self::Database>,
+    {
+        self.pool().fetch_many(query)
+    }
+
+    fn fetch_optional<'e, 'q: 'e, E>(
+        self,
+        query: E,
+    ) -> futures::future::BoxFuture<'e, Result<Option<<Self::Database as sqlx::Database>::Row>, sqlx::Error>>
+    where
+        'c: 'e,
+        E: 'q + sqlx::Execute<'q, Self::Database>,
+    {
+        self.pool().fetch_optional(query)
+    }
+
+    fn prepare_with<'e, 'q: 'e>(
+        self,
+        sql: &'q str,
+        parameters: &'e [<Self::Database as sqlx::Database>::TypeInfo],
+    ) -> futures::future::BoxFuture<'e, Result<<Self::Database as sqlx::Database>::Statement<'q>, sqlx::Error>>
+    where
+        'c: 'e,
+    {
+        self.pool().prepare_with(sql, parameters)
+    }
+
+    fn describe<'e, 'q: 'e>(
+        self,
+        sql: &'q str,
+    ) -> futures::future::BoxFuture<'e, Result<sqlx::Describe<Self::Database>, sqlx::Error>>
+    where
+        'c: 'e,
+    {
+        self.pool().describe(sql)
     }
 }
 

@@ -238,7 +238,7 @@ impl GuildCreatePayload {
                 .fetch_members_for(&guild)
                 .await?
                 .into_iter()
-                .map(|m| m.include_presence(&app.gateway)),
+                .map(|m| m.include_presence(app.gateway())),
         )
         .await;
 

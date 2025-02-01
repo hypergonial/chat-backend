@@ -183,7 +183,7 @@ impl Buckets {
         let guild_id: i64 = guild.into().into();
 
         let channel_ids: Vec<i64> = sqlx::query!("SELECT id FROM channels WHERE guild_id = $1", guild_id)
-            .fetch_all(self.app().db.pool())
+            .fetch_all(self.app().db())
             .await?
             .into_iter()
             .map(|r| r.id)
