@@ -936,7 +936,7 @@ async fn handle_handshake(
 
     let Message::Text(text) = ident else {
         send_close_frame(ws_sink, GatewayCloseCode::Unsupported, "Unsupported message encoding").await?;
-        return Err(GatewayError::MalformedFrame("Invalid IDENTIFY payload".into()));
+        return Err(GatewayError::MalformedFrame("Unsupported message encoding".into()));
     };
 
     let Ok(GatewayMessage::Identify(payload)) = serde_json::from_str(&text) else {
@@ -949,8 +949,7 @@ async fn handle_handshake(
         return Err(GatewayError::AuthError("Invalid token".into()));
     };
 
-    let user_id = token.data().user_id();
-    let Some(user) = app.ops().fetch_user(user_id).await else {
+    let Some(user) = app.ops().fetch_user(token.data().user_id()).await else {
         send_close_frame(ws_sink, GatewayCloseCode::ServerError, "No user belongs to token").await?;
         return Err(GatewayError::InternalServerError("No user belongs to token".into()));
     };
