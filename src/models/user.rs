@@ -188,10 +188,6 @@ impl User {
     ///
     /// * `request` - The update request.
     ///
-    /// ## Returns
-    ///
-    /// `true` if the user's avatar has changed, `false` otherwise.
-    ///
     /// ## Errors
     ///
     /// * [`BuildError::ValidationError`] - If the new username is invalid.
@@ -200,7 +196,7 @@ impl User {
     /// ## Note
     ///
     /// The avatar data still needs to be uploaded to S3.
-    pub fn update(&mut self, request: UpdateUser) -> Result<bool, BuildError> {
+    pub fn update(&mut self, request: UpdateUser) -> Result<(), BuildError> {
         if let Some(username) = request.username {
             self.set_username(username)?;
         }
@@ -210,17 +206,19 @@ impl User {
                 return Err(BuildError::ValidationError(
                     "Display name must be at least 3 characters long".to_string(),
                 ));
+            } else if display_name.len() > 32 {
+                return Err(BuildError::ValidationError(
+                    "Display name must be at most 32 characters long".to_string(),
+                ));
             }
         }
 
         self.display_name = request.display_name;
-        let mut has_avatar_changed = false;
 
         if let Some(uri) = request.avatar {
             self.avatar = Some(Avatar::Full(FullAvatar::from_data_uri(&*self, uri)?));
-            has_avatar_changed = true;
         }
-        Ok(has_avatar_changed)
+        Ok(())
     }
 
     /// Transform this object to also include the user's presence.

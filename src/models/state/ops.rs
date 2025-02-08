@@ -738,7 +738,7 @@ impl<'a> Ops<'a> {
             match user.avatar() {
                 Some(Avatar::Full(f)) => f.upload(self.app.s3()).await?,
                 Some(Avatar::Partial(_)) => {
-                    return Err(BuildError::ValidationError("Cannot upload partial avatar".into()).into());
+                    return Err(AppError::Unexpected("Cannot upload partial avatar".into()));
                 }
                 None => {}
             }

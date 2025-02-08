@@ -176,12 +176,14 @@ pub enum AppError {
     Regex(#[from] regex::Error),
     #[error("Failed to build object: {0}")]
     Build(#[from] BuildError),
-    #[error("Failed to parse int: {0}")]
+    #[error("Failed to parse integer: {0}")]
     ParseInt(#[from] ParseIntError),
     #[error("Authentication failure: {0}")]
     Auth(#[from] AuthError),
     #[error("Internal Server Error: {0}")]
     Axum(#[from] axum::Error),
+    #[error("Internal Server Error: {0}")]
+    Unexpected(String),
     #[error("Not Found: {0}")]
     NotFound(String),
 }
@@ -192,7 +194,7 @@ impl IntoResponse for AppError {
             Self::Multipart(_) => StatusCode::UNPROCESSABLE_ENTITY,
             Self::Regex(_) | Self::ParseInt(_) | Self::JWT(_) | Self::JSON(_) => StatusCode::BAD_REQUEST,
             Self::Build(e) => return e.into_response(),
-            Self::Axum(_) | Self::Database(_) | Self::S3(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::Axum(_) | Self::Database(_) | Self::S3(_) | Self::Unexpected(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::Auth(e) => return e.into_response(),
             Self::NotFound(_) => StatusCode::NOT_FOUND,
         };
