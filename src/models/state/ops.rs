@@ -731,12 +731,16 @@ impl<'a> Ops<'a> {
         }
 
         if old_user.avatar() != user.avatar() {
-            old_user.avatar().map(|a| async { a.delete(self.app.s3()).await });
+            if let Some(a) = old_user.avatar() {
+                a.delete(self.app.s3()).await?;
+            }
+
             match user.avatar() {
                 Some(Avatar::Full(f)) => f.upload(self.app.s3()).await?,
-                _ => {
-                    Err(BuildError::ValidationError("Cannot upload partial avatar".into()))?;
+                Some(Avatar::Partial(_)) => {
+                    return Err(BuildError::ValidationError("Cannot upload partial avatar".into()).into());
                 }
+                None => {}
             }
         }
 
