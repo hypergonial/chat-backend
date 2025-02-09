@@ -133,6 +133,8 @@ impl<'a> Ops<'a> {
 
         let records = if before.is_none() && after.is_none() {
             // SAFETY: sqlx doesn't understand LEFT JOIN properly, so we have to use unchecked here.
+            // Note: The messages are first queried in the inner subquery to ensure
+            // the limits are related to the messages table and not the final join result's row count.
             sqlx::query_as_unchecked!(
                 ExtendedMessageRecord,
                 "SELECT m.*, users.username, users.display_name, users.avatar_hash, 
@@ -149,25 +151,46 @@ impl<'a> Ops<'a> {
             )
             .fetch_all(self.app.db())
             .await?
-        } else {
+        } else if before.is_some() && after.is_none() {
+            // We order by DESC here to get the messages right before the `before` message.
             sqlx::query_as_unchecked!(
                 ExtendedMessageRecord,
                 "SELECT m.*, users.username, users.display_name, users.avatar_hash, 
                 attachments.id AS attachment_id, attachments.filename AS attachment_filename, attachments.content_type AS attachment_content_type
                 FROM (
                     SELECT * FROM messages
-                    WHERE channel_id = $1 AND id < $2 AND id > $3
-                    ORDER BY id DESC LIMIT $4
+                    WHERE channel_id = $1 AND id < $2
+                    ORDER BY id DESC LIMIT $3
                 ) m
                 LEFT JOIN users ON m.user_id = users.id
                 LEFT JOIN attachments ON m.id = attachments.message_id",
                 channel.into() as Snowflake<Channel>,
                 before.map_or(i64::MAX, Into::into),
+                i64::from(limit)
+            )
+            .fetch_all(self.app.db())
+            .await?
+        } else if before.is_none() && after.is_some() {
+            // We order by ASC here to get the messages right after the `after` message.
+            sqlx::query_as_unchecked!(
+                ExtendedMessageRecord,
+                "SELECT m.*, users.username, users.display_name, users.avatar_hash, 
+                attachments.id AS attachment_id, attachments.filename AS attachment_filename, attachments.content_type AS attachment_content_type
+                FROM (
+                    SELECT * FROM messages
+                    WHERE channel_id = $1 AND id > $2
+                    ORDER BY id ASC LIMIT $3
+                ) m
+                LEFT JOIN users ON m.user_id = users.id
+                LEFT JOIN attachments ON m.id = attachments.message_id",
+                channel.into() as Snowflake<Channel>,
                 after.map_or(0, Into::into),
                 i64::from(limit)
             )
             .fetch_all(self.app.db())
             .await?
+        } else {
+            return Err(AppError::Unexpected("Cannot fetch messages before and after".into()));
         };
         Ok(Message::from_records(&records)?)
     }
