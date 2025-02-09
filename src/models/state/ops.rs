@@ -190,7 +190,9 @@ impl<'a> Ops<'a> {
             .fetch_all(self.app.db())
             .await?
         } else {
-            return Err(AppError::Unexpected("Cannot fetch messages before and after".into()));
+            return Err(AppError::Unexpected(
+                "Parameter 'before' and 'after' are mutually exclusive.".into(),
+            ));
         };
         Ok(Message::from_records(&records)?)
     }
