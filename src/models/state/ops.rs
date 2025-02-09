@@ -153,11 +153,11 @@ impl<'a> Ops<'a> {
                 FROM messages
                 LEFT JOIN users ON messages.user_id = users.id
                 LEFT JOIN attachments ON messages.id = attachments.message_id
-                WHERE messages.channel_id = $1 AND messages.id BETWEEN $2 AND $3
+                WHERE messages.channel_id = $1 AND messages.id < $2 AND messages.id > $3
                 ORDER BY messages.id DESC LIMIT $4",
                 channel.into() as Snowflake<Channel>,
-                before.map_or(0, Into::into),
-                after.map_or(i64::MAX, Into::into),
+                before.map_or(i64::MAX, Into::into),
+                after.map_or(0, Into::into),
                 i64::from(limit)
             )
             .fetch_all(self.app.db())
