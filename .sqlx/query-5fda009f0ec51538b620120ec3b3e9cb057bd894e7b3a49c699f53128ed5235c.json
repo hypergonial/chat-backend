@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT messages.*, users.username, users.display_name, users.avatar_hash, attachments.id AS attachment_id, attachments.filename AS attachment_filename, attachments.content_type AS attachment_content_type\n                FROM messages\n                LEFT JOIN users ON messages.user_id = users.id\n                LEFT JOIN attachments ON messages.id = attachments.message_id\n                WHERE messages.channel_id = $1 AND messages.id < $2 AND messages.id > $3\n                ORDER BY messages.id DESC LIMIT $4",
+  "query": "SELECT m.*, users.username, users.display_name, users.avatar_hash, \n                attachments.id AS attachment_id, attachments.filename AS attachment_filename, attachments.content_type AS attachment_content_type\n                FROM (\n                    SELECT * FROM messages\n                    WHERE channel_id = $1 AND id < $2 AND id > $3\n                    ORDER BY id DESC LIMIT $4\n                ) m\n                LEFT JOIN users ON m.user_id = users.id\n                LEFT JOIN attachments ON m.id = attachments.message_id",
   "describe": {
     "columns": [
       {
@@ -68,12 +68,12 @@
       ]
     },
     "nullable": [
-      false,
       true,
-      false,
       true,
-      false,
-      false,
+      true,
+      true,
+      true,
+      true,
       true,
       true,
       false,
@@ -81,5 +81,5 @@
       false
     ]
   },
-  "hash": "724d5bbe5c580b11481bbe44e6177c85715f0a84490614d5c516287fbfcc50a6"
+  "hash": "5fda009f0ec51538b620120ec3b3e9cb057bd894e7b3a49c699f53128ed5235c"
 }

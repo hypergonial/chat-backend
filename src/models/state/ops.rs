@@ -135,12 +135,15 @@ impl<'a> Ops<'a> {
             // SAFETY: sqlx doesn't understand LEFT JOIN properly, so we have to use unchecked here.
             sqlx::query_as_unchecked!(
                 ExtendedMessageRecord,
-                "SELECT messages.*, users.username, users.display_name, users.avatar_hash, attachments.id AS attachment_id, attachments.filename AS attachment_filename, attachments.content_type AS attachment_content_type
-                FROM messages
-                LEFT JOIN users ON messages.user_id = users.id
-                LEFT JOIN attachments ON messages.id = attachments.message_id
-                WHERE messages.channel_id = $1
-                ORDER BY messages.id DESC LIMIT $2",
+                "SELECT m.*, users.username, users.display_name, users.avatar_hash, 
+                attachments.id AS attachment_id, attachments.filename AS attachment_filename, attachments.content_type AS attachment_content_type
+                FROM (
+                    SELECT * FROM messages
+                    WHERE channel_id = $1
+                    ORDER BY id DESC LIMIT $2
+                ) m
+                LEFT JOIN users ON m.user_id = users.id
+                LEFT JOIN attachments ON m.id = attachments.message_id",
                 channel.into() as Snowflake<Channel>,
                 i64::from(limit)
             )
@@ -149,12 +152,15 @@ impl<'a> Ops<'a> {
         } else {
             sqlx::query_as_unchecked!(
                 ExtendedMessageRecord,
-                "SELECT messages.*, users.username, users.display_name, users.avatar_hash, attachments.id AS attachment_id, attachments.filename AS attachment_filename, attachments.content_type AS attachment_content_type
-                FROM messages
-                LEFT JOIN users ON messages.user_id = users.id
-                LEFT JOIN attachments ON messages.id = attachments.message_id
-                WHERE messages.channel_id = $1 AND messages.id < $2 AND messages.id > $3
-                ORDER BY messages.id DESC LIMIT $4",
+                "SELECT m.*, users.username, users.display_name, users.avatar_hash, 
+                attachments.id AS attachment_id, attachments.filename AS attachment_filename, attachments.content_type AS attachment_content_type
+                FROM (
+                    SELECT * FROM messages
+                    WHERE channel_id = $1 AND id < $2 AND id > $3
+                    ORDER BY id DESC LIMIT $4
+                ) m
+                LEFT JOIN users ON m.user_id = users.id
+                LEFT JOIN attachments ON m.id = attachments.message_id",
                 channel.into() as Snowflake<Channel>,
                 before.map_or(i64::MAX, Into::into),
                 after.map_or(0, Into::into),
