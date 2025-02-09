@@ -121,79 +121,54 @@ impl<'a> Ops<'a> {
     ///
     /// ## Errors
     ///
-    /// * [`sqlx::Error`] - If the database query fails.
+    /// * [`RESTError::BadRequest`] - If both `before` and `after` are provided.
+    /// * [`AppError::Database`] - If the database query fails.
     pub async fn fetch_messages_from(
         &self,
         channel: impl Into<Snowflake<Channel>>,
         limit: Option<u32>,
-        before: Option<Snowflake<Message>>,
-        after: Option<Snowflake<Message>>,
-    ) -> Result<Vec<Message>, AppError> {
-        let limit = limit.unwrap_or(50).min(100);
-
-        let records = if before.is_none() && after.is_none() {
-            // SAFETY: sqlx doesn't understand LEFT JOIN properly, so we have to use unchecked here.
-            // Note: The messages are first queried in the inner subquery to ensure
-            // the limits are related to the messages table and not the final join result's row count.
-            sqlx::query_as_unchecked!(
-                ExtendedMessageRecord,
-                "SELECT m.*, users.username, users.display_name, users.avatar_hash, 
-                attachments.id AS attachment_id, attachments.filename AS attachment_filename, attachments.content_type AS attachment_content_type
-                FROM (
-                    SELECT * FROM messages
-                    WHERE channel_id = $1
-                    ORDER BY id DESC LIMIT $2
-                ) m
-                LEFT JOIN users ON m.user_id = users.id
-                LEFT JOIN attachments ON m.id = attachments.message_id",
-                channel.into() as Snowflake<Channel>,
-                i64::from(limit)
-            )
-            .fetch_all(self.app.db())
-            .await?
-        } else if before.is_some() && after.is_none() {
-            // We order by DESC here to get the messages right before the `before` message.
-            sqlx::query_as_unchecked!(
-                ExtendedMessageRecord,
-                "SELECT m.*, users.username, users.display_name, users.avatar_hash, 
-                attachments.id AS attachment_id, attachments.filename AS attachment_filename, attachments.content_type AS attachment_content_type
-                FROM (
-                    SELECT * FROM messages
-                    WHERE channel_id = $1 AND id < $2
-                    ORDER BY id DESC LIMIT $3
-                ) m
-                LEFT JOIN users ON m.user_id = users.id
-                LEFT JOIN attachments ON m.id = attachments.message_id",
-                channel.into() as Snowflake<Channel>,
-                before.map_or(i64::MAX, Into::into),
-                i64::from(limit)
-            )
-            .fetch_all(self.app.db())
-            .await?
-        } else if before.is_none() && after.is_some() {
-            // We order by ASC here to get the messages right after the `after` message.
-            sqlx::query_as_unchecked!(
-                ExtendedMessageRecord,
-                "SELECT m.*, users.username, users.display_name, users.avatar_hash, 
-                attachments.id AS attachment_id, attachments.filename AS attachment_filename, attachments.content_type AS attachment_content_type
-                FROM (
-                    SELECT * FROM messages
-                    WHERE channel_id = $1 AND id > $2
-                    ORDER BY id ASC LIMIT $3
-                ) m
-                LEFT JOIN users ON m.user_id = users.id
-                LEFT JOIN attachments ON m.id = attachments.message_id",
-                channel.into() as Snowflake<Channel>,
-                after.map_or(0, Into::into),
-                i64::from(limit)
-            )
-            .fetch_all(self.app.db())
-            .await?
-        } else {
-            return Err(AppError::Unexpected(
+        before: Option<impl Into<Snowflake<Message>>>,
+        after: Option<impl Into<Snowflake<Message>>>,
+    ) -> Result<Vec<Message>, RESTError> {
+        if before.is_some() && after.is_some() {
+            return Err(RESTError::BadRequest(
                 "Parameter 'before' and 'after' are mutually exclusive.".into(),
             ));
-        };
+        }
+
+        /*
+        Note: The messages are first queried in the inner subquery to ensure
+        the limits are related to the count of fetched messages and not the final join result's row count.
+
+        Note 2: The ordering depends on if after or before are provided.
+        If after is provided, we order by ASC (id) to get the messages right after the `after` message.
+        Otherwise, we order by DESC (-id) to get the messages right before the `before` message.
+        (Or the latest messages if no before is provided)
+        */
+        // SAFETY: sqlx doesn't understand LEFT JOIN properly, so we have to use unchecked here.
+        let records = sqlx::query_as_unchecked!(
+            ExtendedMessageRecord,
+            "SELECT m.*, users.username, users.display_name, users.avatar_hash, 
+                    attachments.id AS attachment_id, attachments.filename AS attachment_filename, attachments.content_type AS attachment_content_type
+             FROM (
+                 SELECT *
+                 FROM messages
+                 WHERE channel_id = $1
+                   AND ($2::BIGINT IS NULL OR id < $2)
+                   AND ($3::BIGINT IS NULL OR id > $3)
+                 ORDER BY CASE WHEN $3 IS NOT NULL THEN id ELSE -id END
+                 LIMIT $4
+             ) m
+             LEFT JOIN users ON m.user_id = users.id
+             LEFT JOIN attachments ON m.id = attachments.message_id",
+            channel.into(),
+            before.map(Into::into),
+            after.map(Into::into),
+            i64::from(limit.unwrap_or(50).min(100))
+        )
+        .fetch_all(self.app.db())
+        .await?;
+
         Ok(Message::from_records(&records)?)
     }
 
