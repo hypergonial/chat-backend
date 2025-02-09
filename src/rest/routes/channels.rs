@@ -24,6 +24,7 @@ struct FetchMessagesQuery {
     limit: Option<u32>,
     before: Option<Snowflake<Message>>,
     after: Option<Snowflake<Message>>,
+    around: Option<Snowflake<Message>>,
 }
 
 /* let message_create_lim: SharedIDLimiter = Arc::new(RateLimiter::keyed(
@@ -309,7 +310,7 @@ async fn fetch_messages(
 
     let messages = app
         .ops()
-        .fetch_messages_from(channel_id, query.limit, query.before, query.after)
+        .fetch_messages_from(channel_id, query.limit, query.before, query.after, query.around)
         .await?;
 
     Ok((StatusCode::OK, Json(messages)))

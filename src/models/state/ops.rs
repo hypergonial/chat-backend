@@ -114,6 +114,7 @@ impl<'a> Ops<'a> {
     /// * `limit` - The maximum number of messages to fetch. Defaults to 50, capped at 100.
     /// * `before` - Fetch messages before this ID.
     /// * `after` - Fetch messages after this ID.
+    /// * `around` - Fetch messages around this ID.
     ///
     /// ## Returns
     ///
@@ -129,10 +130,17 @@ impl<'a> Ops<'a> {
         limit: Option<u32>,
         before: Option<impl Into<Snowflake<Message>>>,
         after: Option<impl Into<Snowflake<Message>>>,
+        around: Option<impl Into<Snowflake<Message>>>,
     ) -> Result<Vec<Message>, RESTError> {
-        if before.is_some() && after.is_some() {
+        // Check if more than one of the before/after/around parameters are provided
+        if [before.is_some(), after.is_some(), around.is_some()]
+            .into_iter()
+            .filter(|&b| b)
+            .count()
+            > 1
+        {
             return Err(RESTError::BadRequest(
-                "Parameter 'before' and 'after' are mutually exclusive.".into(),
+                "Parameters 'before', 'after', and 'around' are mutually exclusive.".into(),
             ));
         }
 
@@ -146,28 +154,64 @@ impl<'a> Ops<'a> {
         (Or the latest messages if no before is provided)
         */
         // SAFETY: sqlx doesn't understand LEFT JOIN properly, so we have to use unchecked here.
-        let records = sqlx::query_as_unchecked!(
-            ExtendedMessageRecord,
-            "SELECT m.*, users.username, users.display_name, users.avatar_hash, 
-                    attachments.id AS attachment_id, attachments.filename AS attachment_filename, attachments.content_type AS attachment_content_type
-             FROM (
-                 SELECT *
-                 FROM messages
-                 WHERE channel_id = $1
-                   AND ($2::BIGINT IS NULL OR id < $2)
-                   AND ($3::BIGINT IS NULL OR id > $3)
-                 ORDER BY CASE WHEN $3 IS NOT NULL THEN id ELSE -id END
-                 LIMIT $4
-             ) m
-             LEFT JOIN users ON m.user_id = users.id
-             LEFT JOIN attachments ON m.id = attachments.message_id",
-            channel.into(),
-            before.map(Into::into),
-            after.map(Into::into),
-            i64::from(limit.unwrap_or(50).min(100))
-        )
-        .fetch_all(self.app.db())
-        .await?;
+        let records = if around.is_none() {
+            sqlx::query_as_unchecked!(
+                ExtendedMessageRecord,
+                "SELECT m.*, users.username, users.display_name, users.avatar_hash, 
+                        attachments.id AS attachment_id, attachments.filename AS attachment_filename, attachments.content_type AS attachment_content_type
+                 FROM (
+                     SELECT *
+                     FROM messages
+                     WHERE channel_id = $1
+                       AND ($2::BIGINT IS NULL OR id < $2)
+                       AND ($3::BIGINT IS NULL OR id > $3)
+                     ORDER BY CASE WHEN $3 IS NOT NULL THEN id ELSE -id END
+                     LIMIT $4
+                 ) m
+                 LEFT JOIN users ON m.user_id = users.id
+                 LEFT JOIN attachments ON m.id = attachments.message_id",
+                channel.into(),
+                before.map(Into::into),
+                after.map(Into::into),
+                i64::from(limit.unwrap_or(50).min(100))
+            )
+            .fetch_all(self.app.db())
+            .await?
+        } else {
+            // Ensure the final message count is always the limit
+            let limit_val = i64::from(limit.unwrap_or(50).clamp(2, 100));
+            let before_limit = limit_val / 2;
+            let after_limit = limit_val - before_limit;
+
+            sqlx::query_as_unchecked!(
+                ExtendedMessageRecord,
+                r#"
+                SELECT m.*, u.username, u.display_name, u.avatar_hash, 
+                       a.id AS attachment_id, a.filename AS attachment_filename, a.content_type AS attachment_content_type
+                FROM (
+                    (SELECT *
+                    FROM messages
+                    WHERE channel_id = $1 AND id < $2
+                    ORDER BY id DESC
+                    LIMIT $3)
+                UNION ALL
+                    (SELECT *
+                    FROM messages
+                    WHERE channel_id = $1 AND id >= $2
+                    ORDER BY id ASC
+                    LIMIT $4)
+                ) m
+                LEFT JOIN users u ON m.user_id = u.id
+                LEFT JOIN attachments a ON m.id = a.message_id
+                "#,
+                channel.into(),
+                around.expect("'around' should exist").into(),
+                before_limit,
+                after_limit
+            )
+            .fetch_all(self.app.db())
+            .await?
+        };
 
         Ok(Message::from_records(&records)?)
     }
