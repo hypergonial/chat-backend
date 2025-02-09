@@ -205,6 +205,7 @@ pub async fn update_self(
     Json(payload): Json<UpdateUser>,
 ) -> Result<Json<User>, RESTError> {
     let user = payload.perform_request(&app, token.data().user_id()).await?;
+    app.gateway().dispatch(GatewayEvent::UserUpdate(user.clone()));
 
     Ok(Json(user))
 }

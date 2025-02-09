@@ -71,6 +71,16 @@ Sent when a member leaves a guild that the currently authenticated user is a mem
 | `id` | `Snowflake` | The member's ID that left the guild. |
 | `guild_id` | `Snowflake` | The guild's ID. |
 
+## USER_UPDATE
+
+### Summary
+
+Sent when a user that the currently authenticated user shares a guild with updates their data.
+
+### Data
+
+A [User](../objects/user.md) object representing the updated user.
+
 ## GUILD_CREATE
 
 ### Summary

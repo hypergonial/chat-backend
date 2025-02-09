@@ -67,7 +67,7 @@ A [User](../objects/user.md) object.
 
 ### Summary
 
-Edits the authenticated user's data.
+Edits the authenticated user's data. Dispatches a [USER_UPDATE](../gateway/events.md#user_update) event.
 
 ### Payload
 

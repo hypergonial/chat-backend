@@ -52,6 +52,8 @@ pub enum GatewayEvent {
     PresenceUpdate(PresenceUpdatePayload),
     /// The server is ready to accept messages.
     Ready(ReadyPayload),
+    /// A user's data was updated.
+    UserUpdate(User),
     /// The server has closed the connection.
     InvalidSession(String),
 }
@@ -72,6 +74,7 @@ impl EventLike for GatewayEvent {
             | Self::Hello(_)
             | Self::Ready(_)
             | Self::InvalidSession(_)
+            | Self::UserUpdate(_)
             | Self::HeartbeatAck => None,
         }
     }
@@ -87,6 +90,7 @@ impl EventLike for GatewayEvent {
             Self::ChannelRemove(payload) => payload.extract_user_id(),
             Self::PresenceUpdate(payload) => Some(payload.user_id),
             Self::Ready(payload) => payload.extract_user_id(),
+            Self::UserUpdate(user) => Some(user.id()),
             Self::InvalidSession(_) | Self::HeartbeatAck | Self::Hello(_) | Self::MessageRemove(_) => None,
         }
     }
