@@ -114,7 +114,7 @@ impl<'a> Ops<'a> {
     /// * `limit` - The maximum number of messages to fetch. Defaults to 50, capped at 100.
     /// * `before` - Fetch messages before this ID.
     /// * `after` - Fetch messages after this ID.
-    /// * `around` - Fetch messages around this ID.
+    /// * `around` - Fetch messages around this ID. The message will be included if it still exists.
     ///
     /// ## Returns
     ///
@@ -178,7 +178,7 @@ impl<'a> Ops<'a> {
             .fetch_all(self.app.db())
             .await?
         } else {
-            // Ensure the final message count is always the limit
+            // Ensure the final message count is always the limit (+1 for the anchor message)
             let limit_val = i64::from(limit.unwrap_or(50).clamp(2, 100));
             let before_limit = limit_val / 2;
             let after_limit = limit_val - before_limit;

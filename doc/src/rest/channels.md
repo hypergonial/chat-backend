@@ -46,7 +46,10 @@ Fetch a sequence of messages from a channel.
 | ---- | ---- | ----------- |
 | before | snowflake? | Get messages before this message ID. |
 | after | snowflake? | Get messages after this message ID. |
+| around | snowflake? | Get messages around this message ID. The message belonging to this ID will also be included, if it still exists. |
 | limit | integer? | The maximum number of messages to return. Capped at 100, defaults to 50. |
+
+**Note:** Only one of `before`, `after`, or `around` can be specified. If none are specified, the endpoint will return the most recent messages in the given channel.
 
 ### Response
 
