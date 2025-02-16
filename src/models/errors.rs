@@ -8,6 +8,7 @@ use axum::{
     Json,
 };
 use derive_builder::UninitializedFieldError;
+use jsonwebtoken::errors::ErrorKind;
 use serde_json::json;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -170,7 +171,7 @@ pub enum AppError {
     JSON(#[from] serde_json::Error),
     #[error("Failed to parse multipart/form-data: {0}")]
     Multipart(#[from] MultipartError),
-    #[error("Failed to parse JWT: {0}")]
+    #[error("Failed to validate token: {0}")]
     JWT(#[from] jsonwebtoken::errors::Error),
     #[error("Failed to match regex: {0}")]
     Regex(#[from] regex::Error),
@@ -192,7 +193,14 @@ impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let status = match self {
             Self::Multipart(_) => StatusCode::UNPROCESSABLE_ENTITY,
-            Self::Regex(_) | Self::ParseInt(_) | Self::JWT(_) | Self::JSON(_) => StatusCode::BAD_REQUEST,
+            Self::JWT(ref e) => {
+                if matches!(e.kind(), ErrorKind::ExpiredSignature) {
+                    StatusCode::UNAUTHORIZED
+                } else {
+                    StatusCode::FORBIDDEN
+                }
+            }
+            Self::Regex(_) | Self::ParseInt(_) | Self::JSON(_) => StatusCode::BAD_REQUEST,
             Self::Build(e) => return e.into_response(),
             Self::Axum(_) | Self::Database(_) | Self::S3(_) | Self::Unexpected(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::Auth(e) => return e.into_response(),
