@@ -267,6 +267,8 @@ async fn delete_message(
         return Err(RESTError::Forbidden("Not permitted to delete resource.".into()));
     }
 
+    app.ops().delete_message(channel_id, message).await?;
+
     app.gateway()
         .dispatch(GatewayEvent::MessageRemove(MessageRemovePayload::new(
             message_id,
