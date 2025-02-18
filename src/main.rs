@@ -7,6 +7,7 @@ pub mod utils;
 
 use axum::{extract::Request, Router, ServiceExt};
 use color_eyre::eyre::Result;
+use mimalloc::MiMalloc;
 use models::state::App;
 use tokio::signal::ctrl_c;
 use tower::Layer;
@@ -19,6 +20,10 @@ use tracing::level_filters::LevelFilter;
 use tokio::signal::unix::{signal, SignalKind};
 
 use crate::models::state::ApplicationState;
+
+// See: https://github.com/microsoft/mimalloc
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 
 #[cfg(unix)]
 async fn handle_signals(state: App) {
