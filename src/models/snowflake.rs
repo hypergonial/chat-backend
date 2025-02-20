@@ -40,8 +40,8 @@ impl<T> Snowflake<T> {
 
     /// Generate a new snowflake using the current time.
     pub fn gen_new(config: &Config) -> Self {
-        let mut gen = get_generator(config.machine_id(), config.process_id());
-        gen.generate().into()
+        let mut generator = get_generator(config.machine_id(), config.process_id());
+        generator.generate().into()
     }
 
     /// Cast this snowflake to a different marker type.
