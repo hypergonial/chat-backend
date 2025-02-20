@@ -1,24 +1,27 @@
 use axum::{
+    Json, Router,
     extract::{Path, State},
     http::StatusCode,
     routing::{delete, get, patch, post},
-    Json, Router,
 };
 use tower_http::limit::RequestBodyLimitLayer;
 
-use crate::models::{
-    auth::Token,
-    channel::Channel,
-    errors::RESTError,
-    gateway_event::{DeletePayload, GatewayEvent},
-    guild::Guild,
-    member::Member,
-    requests::{CreateChannel, CreateGuild},
-    snowflake::Snowflake,
-    state::App,
-    user::User,
-};
 use crate::models::{gateway_event::GuildCreatePayload, requests::UpdateGuild};
+use crate::{
+    gateway::handler::SendMode,
+    models::{
+        auth::Token,
+        channel::Channel,
+        errors::RESTError,
+        gateway_event::GatewayEvent,
+        guild::Guild,
+        member::Member,
+        requests::{CreateChannel, CreateGuild},
+        snowflake::Snowflake,
+        state::App,
+        user::User,
+    },
+};
 
 pub fn get_router() -> Router<App> {
     Router::new()
@@ -63,12 +66,10 @@ async fn create_guild(
 
     app.gateway().add_member(token.data().user_id(), &guild);
 
-    app.gateway()
-        .dispatch(GatewayEvent::GuildCreate(GuildCreatePayload::new(
-            guild.clone(),
-            vec![owner],
-            vec![general],
-        )));
+    app.gateway().dispatch(
+        GatewayEvent::GuildCreate(GuildCreatePayload::new(guild.clone(), vec![owner], vec![general])),
+        SendMode::ToGuild(guild.id()),
+    );
 
     Ok((StatusCode::CREATED, Json(guild)))
 }
@@ -112,7 +113,10 @@ async fn create_channel(
 
     app.ops().create_channel(&channel).await?;
 
-    app.gateway().dispatch(GatewayEvent::ChannelCreate(channel.clone()));
+    app.gateway().dispatch(
+        GatewayEvent::ChannelCreate(channel.clone()),
+        SendMode::ToGuild(guild_id),
+    );
 
     Ok((StatusCode::CREATED, Json(channel)))
 }
@@ -184,7 +188,8 @@ async fn update_guild(
     }
     let guild = payload.perform_request(&app, &guild).await?;
 
-    app.gateway().dispatch(GatewayEvent::GuildUpdate(guild.clone()));
+    app.gateway()
+        .dispatch(GatewayEvent::GuildUpdate(guild.clone()), SendMode::ToGuild(guild.id()));
 
     Ok(Json(guild))
 }
@@ -216,7 +221,8 @@ async fn delete_guild(
 
     app.ops().delete_guild(&guild).await?;
 
-    app.gateway().dispatch(GatewayEvent::GuildRemove(guild));
+    app.gateway()
+        .dispatch(GatewayEvent::GuildRemove(guild.clone()), SendMode::ToGuild(guild_id));
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -334,7 +340,8 @@ async fn create_member(
     app.gateway().add_member(&member, guild_id);
 
     // Dispatch the member create event to all guild members
-    app.gateway().dispatch(GatewayEvent::MemberCreate(member.clone()));
+    app.gateway()
+        .dispatch(GatewayEvent::MemberCreate(member.clone()), SendMode::ToGuild(guild_id));
 
     Ok((StatusCode::CREATED, Json(member)))
 }
@@ -388,10 +395,13 @@ async fn leave_guild(
         .send_to(member.user().id(), GatewayEvent::GuildRemove(guild));
 
     // Dispatch the member remove event
-    app.gateway().dispatch(GatewayEvent::MemberRemove(DeletePayload::new(
-        member.user().id(),
-        Some(member.guild_id()),
-    )));
+    app.gateway().dispatch(
+        GatewayEvent::MemberRemove {
+            id: member.user().id(),
+            guild_id: member.guild_id(),
+        },
+        SendMode::ToGuild(guild_id),
+    );
 
     Ok(StatusCode::NO_CONTENT)
 }

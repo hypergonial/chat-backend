@@ -1,22 +1,25 @@
 use axum::{
+    Json, Router,
     extract::{DefaultBodyLimit, Multipart, Path, Query, State},
     http::StatusCode,
     routing::{delete, get, patch, post},
-    Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use tower_http::limit::RequestBodyLimitLayer;
 
-use crate::models::{
-    auth::Token,
-    channel::{Channel, ChannelLike},
-    errors::RESTError,
-    gateway_event::{GatewayEvent, MessageRemovePayload},
-    member::UserLike,
-    message::Message,
-    requests::UpdateMessage,
-    snowflake::Snowflake,
-    state::App,
+use crate::{
+    gateway::handler::SendMode,
+    models::{
+        auth::Token,
+        channel::{Channel, ChannelLike},
+        errors::RESTError,
+        gateway_event::GatewayEvent,
+        member::UserLike,
+        message::Message,
+        requests::UpdateMessage,
+        snowflake::Snowflake,
+        state::App,
+    },
 };
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -115,7 +118,8 @@ async fn delete_channel(
 
     app.ops().delete_channel(&channel).await?;
 
-    app.gateway().dispatch(GatewayEvent::ChannelRemove(channel));
+    app.gateway()
+        .dispatch(GatewayEvent::ChannelRemove(channel), SendMode::ToGuild(guild.id()));
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -161,7 +165,10 @@ async fn create_message(
     let message = message.strip_attachment_contents();
     let reply = Json(message.clone());
 
-    app.gateway().dispatch(GatewayEvent::MessageCreate(message));
+    app.gateway().dispatch(
+        GatewayEvent::MessageCreate(message),
+        SendMode::ToGuild(channel.guild_id()),
+    );
     Ok((StatusCode::CREATED, reply))
 }
 
@@ -214,7 +221,8 @@ async fn update_message(
     let msg = payload.perform_request(&app, message_id).await?;
 
     let reply = Json(msg.clone());
-    app.gateway().dispatch(GatewayEvent::MessageUpdate(msg));
+    app.gateway()
+        .dispatch(GatewayEvent::MessageUpdate(msg), SendMode::ToGuild(channel.guild_id()));
 
     Ok(reply)
 }
@@ -269,12 +277,14 @@ async fn delete_message(
 
     app.ops().delete_message(channel_id, message).await?;
 
-    app.gateway()
-        .dispatch(GatewayEvent::MessageRemove(MessageRemovePayload::new(
-            message_id,
+    app.gateway().dispatch(
+        GatewayEvent::MessageRemove {
+            id: message_id,
             channel_id,
-            Some(channel.guild_id()),
-        )));
+            guild_id: Some(channel.guild_id()),
+        },
+        SendMode::ToGuild(channel.guild_id()),
+    );
 
     Ok(StatusCode::NO_CONTENT)
 }

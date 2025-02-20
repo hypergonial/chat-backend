@@ -1,30 +1,31 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, hash_map::Entry},
     fmt::{self, Display, Formatter},
     sync::{Arc, Weak},
     time::Duration,
 };
 
 use axum::{
+    Router,
     extract::{
-        ws::{CloseFrame, Message, Utf8Bytes, WebSocket, WebSocketUpgrade},
         State,
+        ws::{CloseFrame, Message, Utf8Bytes, WebSocket, WebSocketUpgrade},
     },
     response::IntoResponse,
     routing::get,
-    Router,
 };
 use futures_util::{
-    stream::{SplitSink, SplitStream},
     SinkExt, StreamExt,
+    stream::{SplitSink, SplitStream},
 };
 use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
 use tokio::{
     sync::{
-        broadcast,
+        Mutex,
+        broadcast::{self, error::RecvError},
         mpsc::{self, error::SendError},
-        oneshot, Mutex,
+        oneshot,
     },
     time::timeout,
 };
@@ -35,16 +36,13 @@ use crate::{
     models::{
         auth::Token,
         errors::GatewayError,
-        gateway_event::{
-            EventLike, GatewayEvent, GatewayMessage, GuildCreatePayload, HelloPayload, PresenceUpdatePayload,
-            ReadyPayload,
-        },
+        gateway_event::{GatewayEvent, GatewayMessage, GuildCreatePayload},
         guild::Guild,
         snowflake::Snowflake,
         state::{App, ApplicationState},
         user::{Presence, User},
     },
-    utils::join_handle::JoinHandleExt,
+    utils::join_handle::{AbortingJoinHandle, JoinHandleExt},
 };
 
 /// Default heartbeat interval in milliseconds
@@ -149,15 +147,36 @@ impl Display for ConnectionId {
     }
 }
 
-#[derive(Debug, Clone)]
-struct ConnectionInfo {
+/// A set of connection handles for a given user
+///
+/// ## Fields
+///
+/// * `user_id` - The ID of the user
+/// * `guild_ids` - The guilds the user is a member of
+/// * `handles` - The session handles for the user
+/// * `receiver` - The receiver for receiving messages from the user
+#[derive(Debug)]
+struct UserHandle {
+    user_id: Snowflake<User>,
     guild_ids: HashSet<Snowflake<Guild>>,
-    handles: HashMap<Uuid, ConnectionHandle>,
+    handles: HashMap<Uuid, SessionHandle>,
+    receiver: Arc<broadcast::Sender<(ConnectionId, GatewayMessage)>>,
 }
 
-impl ConnectionInfo {
-    pub const fn new(guild_ids: HashSet<Snowflake<Guild>>, handles: HashMap<Uuid, ConnectionHandle>) -> Self {
-        Self { guild_ids, handles }
+impl UserHandle {
+    pub fn new(
+        user: impl Into<Snowflake<User>>,
+        guild_ids: HashSet<Snowflake<Guild>>,
+        handles: HashMap<Uuid, SessionHandle>,
+    ) -> Self {
+        let (sender, _) = broadcast::channel(100);
+
+        Self {
+            user_id: user.into(),
+            guild_ids,
+            handles,
+            receiver: Arc::new(sender),
+        }
     }
 
     /// Get the guilds the user is a member of
@@ -170,6 +189,15 @@ impl ConnectionInfo {
         &mut self.guild_ids
     }
 
+    /// Subscribe to receive gateway messages from the user
+    ///
+    /// ## Returns
+    ///
+    /// A receiver for receiving messages from the user
+    fn subscribe(&self) -> broadcast::Receiver<(ConnectionId, GatewayMessage)> {
+        self.receiver.subscribe()
+    }
+
     /// Get a handle to the connection handle with the given ID
     ///
     /// ## Arguments
@@ -179,8 +207,7 @@ impl ConnectionInfo {
     /// ## Returns
     ///
     /// A reference to the connection handle if it exists
-    #[expect(dead_code)]
-    pub fn get_handle(&self, id: Uuid) -> Option<&ConnectionHandle> {
+    pub fn get_handle(&self, id: Uuid) -> Option<&SessionHandle> {
         self.handles.get(&id)
     }
 
@@ -189,7 +216,7 @@ impl ConnectionInfo {
     /// ## Returns
     ///
     /// An iterator over the connection handles
-    pub fn iter_handles(&self) -> impl Iterator<Item = (&Uuid, &ConnectionHandle)> {
+    pub fn iter_handles(&self) -> impl Iterator<Item = (&Uuid, &SessionHandle)> {
         self.handles.iter()
     }
 
@@ -205,8 +232,14 @@ impl ConnectionInfo {
     ///
     /// A mutable reference to the connection handle
     #[expect(dead_code)]
-    pub fn get_or_insert(&mut self, id: Uuid, default: ConnectionHandle) -> &mut ConnectionHandle {
-        self.handles.entry(id).or_insert(default)
+    pub fn get_or_insert(&mut self, id: Uuid, mut default: SessionHandle) -> &mut SessionHandle {
+        match self.handles.entry(id) {
+            Entry::Vacant(v) => {
+                default.bind_to(ConnectionId(self.user_id, id), &self.receiver);
+                v.insert(default)
+            }
+            Entry::Occupied(o) => o.into_mut(),
+        }
     }
 
     /// Get a mutable handle to the connection handle with the given ID
@@ -218,7 +251,7 @@ impl ConnectionInfo {
     /// ## Returns
     ///
     /// A mutable reference to the connection handle if it exists
-    pub fn get_handle_mut(&mut self, id: Uuid) -> Option<&mut ConnectionHandle> {
+    pub fn get_handle_mut(&mut self, id: Uuid) -> Option<&mut SessionHandle> {
         self.handles.get_mut(&id)
     }
 
@@ -231,7 +264,8 @@ impl ConnectionInfo {
     /// ## Returns
     ///
     /// The ID of the inserted connection handle
-    pub fn insert_handle(&mut self, id: Uuid, handle: ConnectionHandle) -> Uuid {
+    pub fn insert_handle(&mut self, id: Uuid, mut handle: SessionHandle) -> Uuid {
+        handle.bind_to(ConnectionId(self.user_id, id), &self.receiver);
         self.handles.insert(id, handle);
         id
     }
@@ -282,27 +316,95 @@ impl ConnectionInfo {
     }
 }
 
-/// A struct containing connection details for a user
+/// A struct representing a single session of a user
 ///
 /// ## Fields
 ///
 /// * `sender` - The sender for sending messages to the client
 /// * `receiver` - The receiver for receiving messages from the client
 /// * `guild_ids` - The guilds the user is a member of, this is used to filter events
-#[derive(Debug, Clone)]
-struct ConnectionHandle {
+#[derive(Debug)]
+struct SessionHandle {
+    /// Send messages to the client
     sender: mpsc::UnboundedSender<GatewayResponse>,
+    /// Subscribe to this to receive events coming from the session
+    receiver: Arc<broadcast::Sender<GatewayMessage>>,
+    /// Use to forward events to the parent `ConnectionInfo`
+    user_forwarder: Weak<broadcast::Sender<(ConnectionId, GatewayMessage)>>,
+    /// The ID of this handle
+    conn_id: Option<ConnectionId>,
+    /// Handle to the forwarder task
+    forwarder_task: Option<AbortingJoinHandle<()>>,
 }
 
-impl ConnectionHandle {
+impl SessionHandle {
     /// Create a new connection handle with the given sender and guilds
     ///
     /// ## Arguments
     ///
     /// * `sender` - The sender for sending messages to the client
     /// * `receiver` - The receiver for receiving messages from the client
-    pub const fn new(sender: mpsc::UnboundedSender<GatewayResponse>) -> Self {
-        Self { sender }
+    pub const fn new(
+        sender: mpsc::UnboundedSender<GatewayResponse>,
+        receiver: Arc<broadcast::Sender<GatewayMessage>>,
+    ) -> Self {
+        Self {
+            sender,
+            receiver,
+            conn_id: None,
+            forwarder_task: None,
+            user_forwarder: Weak::new(),
+        }
+    }
+
+    /// Bind the connection handle to a `ConnectionInfo` and start forwarding messages to it.
+    ///
+    /// ## Arguments
+    ///
+    /// * `conn_id` - The ID this handle was assigned
+    /// * `user_forwarder` - The forwarder to send messages to
+    fn bind_to(
+        &mut self,
+        conn_id: ConnectionId,
+        user_forwarder: &Arc<broadcast::Sender<(ConnectionId, GatewayMessage)>>,
+    ) {
+        self.user_forwarder = Arc::downgrade(user_forwarder);
+        self.conn_id = Some(conn_id);
+        self.start_forwarding();
+    }
+
+    fn start_forwarding(&mut self) {
+        let mut receiver = self.receiver.subscribe();
+        let Some(user_forwarder) = self.user_forwarder.upgrade() else {
+            tracing::warn!("User forwarder is unavailable, requests from user will not be forwarded");
+            return;
+        };
+
+        let Some(conn_id) = self.conn_id else {
+            tracing::warn!("Connection ID is unavailable, requests from user will not be forwarded");
+            return;
+        };
+
+        self.forwarder_task = Some(
+            tokio::spawn(async move {
+                loop {
+                    match receiver.recv().await {
+                        Ok(msg) => {
+                            // Ignore potentially not having any receivers
+                            user_forwarder.send((conn_id, msg)).ok();
+                        }
+                        Err(RecvError::Lagged(e)) => {
+                            tracing::warn!(error = %e, "Forwarder is lagging, dropping messages");
+                        }
+                        Err(e) => {
+                            tracing::warn!(error = %e, "Failed to receive message from session");
+                            break;
+                        }
+                    }
+                }
+            })
+            .abort_on_drop(), // We don't want the task to leak if the handle is dropped
+        );
     }
 
     /// Send a message to the client
@@ -326,33 +428,54 @@ impl ConnectionHandle {
         let resp = GatewayResponse::Close(code, reason);
         self.sender.send(resp)
     }
+
+    /// Subscribe to messages coming from the client
+    ///
+    /// ## Returns
+    ///
+    /// A receiver for receiving messages from the client
+    pub fn subscribe(&self) -> broadcast::Receiver<GatewayMessage> {
+        self.receiver.subscribe()
+    }
 }
 
-#[derive(Debug)]
+/// Defines the possible modes for sending a message
+#[derive(Debug, Clone, Copy)]
 pub enum SendMode {
+    /// Send the event to a specific user
     ToUser(Snowflake<User>),
-    ToUserGuilds(Snowflake<User>, HashSet<Snowflake<Guild>>),
+    /// Send the event to all guilds the user is a member of
+    ToMutualGuilds(Snowflake<User>),
+    /// Send the event to all users in a guild
     ToGuild(Snowflake<Guild>),
 }
 
 enum Instruction {
-    Dispatch(GatewayEvent),
+    Dispatch(GatewayEvent, SendMode),
     SendTo(Snowflake<User>, GatewayEvent),
     SendToSession(ConnectionId, GatewayEvent),
     CloseSession(ConnectionId, GatewayCloseCode, String),
     CloseUser(Snowflake<User>, GatewayCloseCode, String),
     CloseAll(oneshot::Sender<()>),
     RemoveSession(ConnectionId),
-    NewSession(ConnectionId, ConnectionHandle),
+    NewSession(ConnectionId, SessionHandle),
     AddMember(Snowflake<User>, Snowflake<Guild>),
     RemoveMember(Snowflake<User>, Snowflake<Guild>),
+    SubscribeToUser(
+        Snowflake<User>,
+        oneshot::Sender<Option<broadcast::Receiver<(ConnectionId, GatewayMessage)>>>,
+    ),
+    SubscribeToConn(
+        ConnectionId,
+        oneshot::Sender<Option<broadcast::Receiver<GatewayMessage>>>,
+    ),
     QueryConnectedStatus(Snowflake<User>, oneshot::Sender<bool>),
 }
 
 #[derive(Debug)]
 struct GatewayActor {
     receiver: mpsc::UnboundedReceiver<Instruction>,
-    peers: HashMap<Snowflake<User>, ConnectionInfo>,
+    peermap: HashMap<Snowflake<User>, UserHandle>,
     app: Weak<ApplicationState>,
 }
 
@@ -360,7 +483,7 @@ impl GatewayActor {
     fn new(app: Weak<ApplicationState>, receiver: mpsc::UnboundedReceiver<Instruction>) -> Self {
         Self {
             app,
-            peers: HashMap::new(),
+            peermap: HashMap::new(),
             receiver,
         }
     }
@@ -383,21 +506,27 @@ impl GatewayActor {
             }
 
             match instruction {
-                Instruction::NewSession(id, handle) => self.add_handle(id, handle).await,
-                Instruction::RemoveSession(id) => self.remove_handle(id),
-                Instruction::Dispatch(event) => self.dispatch(event),
+                Instruction::NewSession(id, handle) => self.add_session(id, handle).await,
+                Instruction::RemoveSession(id) => self.remove_session(id),
+                Instruction::Dispatch(event, send_mode) => self.dispatch(event, send_mode),
                 Instruction::SendTo(user, event) => self.send_to(user, event),
                 Instruction::SendToSession(id, event) => self.send_to_session(id, event),
                 Instruction::AddMember(user, guild) => self.add_member(user, guild),
                 Instruction::RemoveMember(user, guild) => self.remove_member(user, guild),
                 Instruction::CloseSession(conn, code, reason) => self.close_session(conn, code, reason),
                 Instruction::CloseUser(user, code, reason) => self.close_user_sessions(user, code, &reason),
+                Instruction::SubscribeToConn(id, tx) => {
+                    let _ = tx.send(self.get_conn_recv(id));
+                }
+                Instruction::SubscribeToUser(user_id, tx) => {
+                    let _ = tx.send(self.get_user_recv(user_id));
+                }
                 Instruction::QueryConnectedStatus(id, tx) => {
                     let _ = tx.send(self.is_connected(id));
                 }
                 Instruction::CloseAll(tx) => {
                     self.close();
-                    let _ = tx.send(()); // Notify the caller that the gateway has been closed
+                    let _ = tx.send(()); // Signal that the gateway has been closed
                     break;
                 }
             }
@@ -409,16 +538,16 @@ impl GatewayActor {
     /// ## Arguments
     ///
     /// * `user_id` - The ID of the user to add
-    /// * `handle` - The connection handle to add
+    /// * `session` - The session handle to add
     ///
     /// ## Locks
     ///
     /// * `peers` (write)
-    async fn add_handle(&mut self, id: ConnectionId, handle: ConnectionHandle) {
-        if let Some(conn) = self.peers.get_mut(&id.0) {
-            conn.insert_handle(id.1, handle);
+    async fn add_session(&mut self, id: ConnectionId, session: SessionHandle) {
+        if let Some(conn) = self.peermap.get_mut(&id.0) {
+            conn.insert_handle(id.1, session);
         } else {
-            let mut handles = HashMap::new();
+            let mut sessions = HashMap::new();
 
             let guild_ids = sqlx::query!(
                 "SELECT guild_id FROM members WHERE user_id = $1",
@@ -431,12 +560,33 @@ impl GatewayActor {
             .map(|row| row.guild_id.into())
             .collect::<HashSet<Snowflake<Guild>>>();
 
-            handles.insert(id.1, handle);
-            self.peers.insert(id.0, ConnectionInfo::new(guild_ids, handles));
+            sessions.insert(id.1, session);
+
+            let handle = UserHandle::new(id.0, guild_ids, sessions);
+            let mut receiver = handle.subscribe();
+            let maybe_app = self.app.clone();
+
+            // Call the default inbound handler
+            tokio::spawn(async move {
+                loop {
+                    match receiver.recv().await {
+                        Ok((id, msg)) => {
+                            let Some(app) = maybe_app.upgrade() else { break };
+                            app.ops().handle_inbound_gateway_message(id, msg).await;
+                        }
+                        Err(RecvError::Lagged(e)) => {
+                            tracing::warn!(error = %e, "Forwarder is lagging, dropping messages");
+                        }
+                        Err(_) => break,
+                    }
+                }
+            });
+
+            self.peermap.insert(id.0, handle);
         }
     }
 
-    /// Remove a connection handle from the gateway state
+    /// Remove a session handle from the gateway state
     ///
     /// ## Arguments
     ///
@@ -445,14 +595,40 @@ impl GatewayActor {
     /// ## Locks
     ///
     /// * `peers` (write)
-    fn remove_handle(&mut self, id: ConnectionId) {
-        if let Some(conn) = self.peers.get_mut(&id.0) {
+    fn remove_session(&mut self, id: ConnectionId) {
+        if let Some(conn) = self.peermap.get_mut(&id.0) {
             conn.drop_handle(id.1);
 
             if conn.is_empty() {
-                self.peers.remove(&id.0);
+                self.peermap.remove(&id.0);
             }
         }
+    }
+
+    /// Get a receiver for receiving messages from a specific connection
+    ///
+    /// ## Arguments
+    ///
+    /// * `id` - The ID of the connection to get the receiver for
+    ///
+    /// ## Returns
+    ///
+    /// A receiver for receiving messages from the connection, if it exists
+    fn get_conn_recv(&self, id: ConnectionId) -> Option<broadcast::Receiver<GatewayMessage>> {
+        Some(self.peermap.get(&id.0)?.get_handle(id.1)?.subscribe())
+    }
+
+    /// Get a receiver for receiving messages from a specific user
+    ///
+    /// ## Arguments
+    ///
+    /// * `user_id` - The ID of the user to get the receiver for
+    ///
+    /// ## Returns
+    ///
+    /// A receiver for receiving messages from the user, if they are connected
+    fn get_user_recv(&self, user_id: Snowflake<User>) -> Option<broadcast::Receiver<(ConnectionId, GatewayMessage)>> {
+        Some(self.peermap.get(&user_id)?.subscribe())
     }
 
     /// Dispatch a new event originating from the given user to all other users
@@ -460,21 +636,34 @@ impl GatewayActor {
     /// ## Arguments
     ///
     /// * `payload` - The event payload
-    fn dispatch(&mut self, event: GatewayEvent) {
+    fn dispatch(&mut self, event: GatewayEvent, send_mode: SendMode) {
+        if let SendMode::ToUser(user_id) = send_mode {
+            self.send_to(user_id, event);
+            return;
+        }
+
         tracing::debug!(?event, "Dispatching event");
 
         let mut to_drop: Vec<ConnectionId> = Vec::new();
 
         // Avoid cloning the event for each user
         let event: Arc<GatewayEvent> = Arc::new(event);
-        let event_guild_id = event.extract_guild_id();
-        let event_user_id = event.extract_user_id();
-        let event_user_guilds = event_user_id.and_then(|uid| self.peers.get(&uid).map(|a| a.guild_ids().clone()));
 
-        for (uid, conninfo) in &mut self.peers {
+        // Compute mutual guilds if the event is for mutual guilds
+        let event_user_id = if let SendMode::ToMutualGuilds(user_id) = send_mode {
+            Some(user_id)
+        } else {
+            None
+        };
+
+        let event_user_guilds = event_user_id.and_then(|uid| self.peermap.get(&uid).map(|a| a.guild_ids().clone()));
+
+        // TODO: if event is a GUILD_REMOVE, remove the guild from guild sets
+
+        for (uid, conninfo) in &mut self.peermap {
             for (handle_id, handle) in conninfo.iter_handles() {
                 // If the event is guild-specific, only send it to users that are members of that guild
-                if let Some(event_guild) = event_guild_id {
+                if let SendMode::ToGuild(event_guild) = send_mode {
                     if !conninfo.guild_ids().contains(&event_guild) {
                         continue;
                     }
@@ -494,7 +683,7 @@ impl GatewayActor {
         }
 
         for conn in to_drop {
-            self.remove_handle(conn);
+            self.remove_session(conn);
         }
     }
 
@@ -512,7 +701,7 @@ impl GatewayActor {
         let user_id = user.into();
         let event = Arc::new(event);
         let mut to_drop: Vec<ConnectionId> = Vec::new();
-        let Some(conn) = self.peers.get(&user_id) else { return };
+        let Some(conn) = self.peermap.get(&user_id) else { return };
 
         for (handle_id, handle) in conn.iter_handles() {
             if let Err(err) = handle.send(event.clone()) {
@@ -522,7 +711,7 @@ impl GatewayActor {
         }
 
         for conn in to_drop {
-            self.remove_handle(conn);
+            self.remove_session(conn);
         }
     }
 
@@ -534,14 +723,16 @@ impl GatewayActor {
     /// * `event` - The event to send
     fn send_to_session(&mut self, id: ConnectionId, event: GatewayEvent) {
         let event = Arc::new(event);
-        let Some(conn) = self.peers.get_mut(&id.0) else { return };
+        let Some(conn) = self.peermap.get_mut(&id.0) else {
+            return;
+        };
         let Some(handle) = conn.get_handle_mut(id.1) else {
             return;
         };
 
         if let Err(err) = handle.send(event) {
             tracing::warn!(error = %err, "Error sending event to session: {id}");
-            self.remove_handle(id);
+            self.remove_session(id);
         }
     }
 
@@ -553,7 +744,7 @@ impl GatewayActor {
     /// * `code` - The close code to send
     /// * `reason` - The reason for closing the connection
     fn close_session(&mut self, conn: ConnectionId, code: GatewayCloseCode, reason: String) {
-        self.peers.entry(conn.0).and_modify(|a| {
+        self.peermap.entry(conn.0).and_modify(|a| {
             a.close_handle(conn.1, code, reason);
         });
     }
@@ -567,17 +758,17 @@ impl GatewayActor {
     /// * `reason` - The reason for closing the connection
     fn close_user_sessions(&mut self, user: impl Into<Snowflake<User>>, code: GatewayCloseCode, reason: &str) {
         let user_id = user.into();
-        if let Some(conn) = self.peers.get_mut(&user_id) {
+        if let Some(conn) = self.peermap.get_mut(&user_id) {
             conn.close_all(code, reason);
-            self.peers.remove(&user_id);
+            self.peermap.remove(&user_id);
         }
     }
 
     fn close(&mut self) {
-        for conn in self.peers.values_mut() {
+        for conn in self.peermap.values_mut() {
             conn.close_all(GatewayCloseCode::GoingAway, "Server shutting down");
         }
-        self.peers.clear();
+        self.peermap.clear();
     }
 
     /// Determines if the given user is connected
@@ -590,7 +781,7 @@ impl GatewayActor {
     ///
     /// `true` if the user is connected, `false` otherwise
     fn is_connected(&self, user: impl Into<Snowflake<User>>) -> bool {
-        self.peers.get(&user.into()).is_some_and(|conn| !conn.is_empty())
+        self.peermap.get(&user.into()).is_some_and(|conn| !conn.is_empty())
     }
 
     /// Registers a new guild member instance to an existing connection
@@ -604,7 +795,7 @@ impl GatewayActor {
     ///
     /// * `peers` (write)
     fn add_member(&mut self, user: impl Into<Snowflake<User>>, guild: impl Into<Snowflake<Guild>>) {
-        if let Some(handle) = self.peers.get_mut(&user.into()) {
+        if let Some(handle) = self.peermap.get_mut(&user.into()) {
             handle.guild_ids_mut().insert(guild.into());
         }
     }
@@ -620,7 +811,7 @@ impl GatewayActor {
     ///
     /// * `peers` (write)
     fn remove_member(&mut self, user: impl Into<Snowflake<User>>, guild: impl Into<Snowflake<Guild>>) {
-        if let Some(handle) = self.peers.get_mut(&user.into()) {
+        if let Some(handle) = self.peermap.get_mut(&user.into()) {
             handle.guild_ids_mut().remove(&guild.into());
         }
     }
@@ -635,7 +826,7 @@ pub struct Gateway {
     sender: Option<mpsc::UnboundedSender<Instruction>>,
     task: Option<tokio::task::JoinHandle<()>>,
     app: Weak<ApplicationState>,
-    was_bound: bool,
+    is_bound: bool,
 }
 
 impl Gateway {
@@ -644,20 +835,20 @@ impl Gateway {
             sender: None,
             task: None,
             app: Weak::new(),
-            was_bound: false,
+            is_bound: false,
         }
     }
 
     pub fn bind_to(&mut self, app: Weak<ApplicationState>) {
         self.app = app;
-        self.was_bound = true;
+        self.is_bound = true;
     }
 
     /// Start the gateway
     ///
     /// Starts the internal gateway actor and begins processing messages
     pub fn start(&mut self) {
-        assert!(self.was_bound, "Gateway was not bound to an application state");
+        assert!(self.is_bound, "Gateway was not bound to an application state");
 
         if let Some(a) = self.task.as_ref() {
             a.abort();
@@ -685,7 +876,9 @@ impl Gateway {
             tracing::error!(error = %e, "Failed to send close instruction to gateway");
             return;
         }
-        rx.await.expect("Failed to close gateway");
+        if let Err(e) = rx.await {
+            tracing::error!(error = %e, "Failed to close gateway");
+        }
     }
 
     /// Abort the gateway.
@@ -714,6 +907,57 @@ impl Gateway {
         }
     }
 
+    /// Get the connection receiver for the given connection ID
+    ///
+    /// ## Arguments
+    ///
+    /// * `id` - The ID of the connection to get the receiver for
+    ///
+    /// ## Returns
+    ///
+    /// A receiver for receiving gateway messages from the connection,
+    /// or `None` if the connection does not exist
+    pub async fn get_conn_recv(&self, id: ConnectionId) -> Option<broadcast::Receiver<GatewayMessage>> {
+        let (tx, rx) = oneshot::channel();
+        self.send_instruction(Instruction::SubscribeToConn(id, tx));
+
+        match rx.await {
+            Ok(Some(receiver)) => Some(receiver),
+            Ok(None) => None,
+            Err(e) => {
+                tracing::error!(error = %e, "Failed to subscribe to connection");
+                None
+            }
+        }
+    }
+
+    /// Get the user receiver for the given user ID
+    ///
+    /// ## Arguments
+    ///
+    /// * `user_id` - The ID of the user to get the receiver for
+    ///
+    /// ## Returns
+    ///
+    /// A receiver for receiving gateway messages from the user,
+    /// or `None` if the user has no active connections
+    pub async fn get_user_recv(
+        &self,
+        user_id: Snowflake<User>,
+    ) -> Option<broadcast::Receiver<(ConnectionId, GatewayMessage)>> {
+        let (tx, rx) = oneshot::channel();
+        self.send_instruction(Instruction::SubscribeToUser(user_id, tx));
+
+        match rx.await {
+            Ok(Some(receiver)) => Some(receiver),
+            Ok(None) => None,
+            Err(e) => {
+                tracing::error!(error = %e, "Failed to subscribe to user");
+                None
+            }
+        }
+    }
+
     /// Add a new connection handle to the gateway state
     ///
     /// ## Arguments
@@ -726,7 +970,7 @@ impl Gateway {
     /// ## Locks
     ///
     /// * `peers` (write)
-    fn create_session(&self, id: ConnectionId, handle: ConnectionHandle) {
+    fn create_session(&self, id: ConnectionId, handle: SessionHandle) {
         self.send_instruction(Instruction::NewSession(id, handle));
     }
 
@@ -750,8 +994,8 @@ impl Gateway {
     /// ## Locks
     ///
     /// * `peers` (write)
-    pub fn dispatch(&self, event: GatewayEvent) {
-        self.send_instruction(Instruction::Dispatch(event));
+    pub fn dispatch(&self, event: GatewayEvent, send_mode: SendMode) {
+        self.send_instruction(Instruction::Dispatch(event, send_mode));
     }
 
     /// Close a user session with the given code and reason
@@ -930,9 +1174,11 @@ async fn handle_handshake(
     // Send HELLO with the heartbeat interval
     ws_sink
         .send(Message::Text(
-            serde_json::to_string(&GatewayEvent::Hello(HelloPayload::new(HEARTBEAT_INTERVAL)))
-                .expect("Failed to serialize HELLO payload")
-                .into(),
+            serde_json::to_string(&GatewayEvent::Hello {
+                heartbeat_interval: HEARTBEAT_INTERVAL,
+            })
+            .expect("Failed to serialize HELLO payload")
+            .into(),
         ))
         .await
         .ok();
@@ -948,12 +1194,12 @@ async fn handle_handshake(
         return Err(GatewayError::MalformedFrame("Unsupported message encoding".into()));
     };
 
-    let Ok(GatewayMessage::Identify(payload)) = serde_json::from_str(&text) else {
+    let Ok(GatewayMessage::Identify { token }) = serde_json::from_str(&text) else {
         send_close_frame(ws_sink, GatewayCloseCode::InvalidPayload, "Invalid IDENTIFY payload").await?;
         return Err(GatewayError::MalformedFrame("Invalid IDENTIFY payload".into()));
     };
 
-    let Ok(token) = Token::validate(app.clone(), payload.token.expose_secret()).await else {
+    let Ok(token) = Token::validate(app.clone(), token.expose_secret()).await else {
         send_close_frame(ws_sink, GatewayCloseCode::PolicyViolation, "Invalid token").await?;
         return Err(GatewayError::AuthError("Invalid token".into()));
     };
@@ -1023,7 +1269,7 @@ async fn handle_heartbeating(
 /// * `app` - The shared application state
 /// * `user` - The user to send the `READY` event to
 /// * `ws_sink` - The sink for sending messages to the user
-async fn send_ready(
+async fn send_onboarding_payloads(
     app: App,
     user: User,
     ws_sink: Arc<Mutex<SplitSink<WebSocket, Message>>>,
@@ -1037,7 +1283,10 @@ async fn send_ready(
     // Send READY
     send_serializable(
         &mut *ws_sink.lock().await,
-        GatewayEvent::Ready(ReadyPayload::new(user.clone(), guilds.clone())),
+        GatewayEvent::Ready {
+            user: user.clone(),
+            guilds: guilds.clone(),
+        },
     )
     .await?;
 
@@ -1054,11 +1303,13 @@ async fn send_ready(
     match user.last_presence() {
         Presence::Offline => {}
         _ => {
-            app.gateway()
-                .dispatch(GatewayEvent::PresenceUpdate(PresenceUpdatePayload {
+            app.gateway().dispatch(
+                GatewayEvent::PresenceUpdate {
                     user_id: user.id(),
                     presence: *user.last_presence(),
-                }));
+                },
+                SendMode::ToMutualGuilds(user.id()),
+            );
         }
     }
     Ok(())
@@ -1127,7 +1378,17 @@ async fn receive_events(
 
         match serde_json::from_str::<GatewayRequest>(&text) {
             Ok(GatewayRequest::Message(msg)) => {
-                broadcaster.send(msg).ok();
+                if let Err(e) = broadcaster.send(msg) {
+                    tracing::error!(error = %e, "Failed to broadcast message, all receivers dropped");
+                    send_close_frame(
+                        &mut *ws_sink.lock().await,
+                        GatewayCloseCode::ServerError,
+                        "Internal Server Error",
+                    )
+                    .await
+                    .ok();
+                    break;
+                }
             }
             Err(e) => {
                 send_close_frame(
@@ -1170,16 +1431,15 @@ async fn handle_connection(app: App, socket: WebSocket) {
         return;
     };
 
-    // Assign new session ID to this connection
     let conn_id = ConnectionId(user.id(), Uuid::new_v4());
 
     tracing::debug!(?user, "Connected: {} ({})", user.username(), conn_id);
 
     let (sender, receiver) = mpsc::unbounded_channel::<GatewayResponse>();
-    let (broadcaster, _) = broadcast::channel::<GatewayMessage>(100);
+    let (broadcaster, _) = broadcast::channel::<GatewayMessage>(8);
     let broadcaster = Arc::new(broadcaster);
 
-    let handle = ConnectionHandle::new(sender);
+    let handle = SessionHandle::new(sender, broadcaster.clone());
 
     // Add user to peermap
     app.gateway().create_session(conn_id, handle);
@@ -1187,11 +1447,11 @@ async fn handle_connection(app: App, socket: WebSocket) {
     let user = user.include_presence(app.gateway()).await;
     let user_id = user.id();
 
-    // We want to use the same sink in multiple tasks, so we wrap it in an Arc<Mutex>
+    // We want to use the same sink in multiple tasks
     let ws_sink = Arc::new(Mutex::new(ws_sink));
 
     // Send READY and guild creates to user
-    let send_ready = tokio::spawn(send_ready(app.clone(), user.clone(), ws_sink.clone()));
+    let send_ready = tokio::spawn(send_onboarding_payloads(app.clone(), user.clone(), ws_sink.clone()));
 
     // The tasks need to be dropped when their joinhandles are dropped by select!
     let send_events = tokio::spawn(send_events(
@@ -1222,22 +1482,22 @@ async fn handle_connection(app: App, socket: WebSocket) {
         return;
     }
 
-    // Disconnection logic
     app.gateway().remove_session(conn_id);
     tracing::debug!(?user, "Disconnected: {} ({})", user.username(), conn_id);
 
-    // Refetch presence in case it changed
+    // Refetch presence in case it changed, to ensure we don't accidentally reveal the user's presence
     let presence = app.ops().fetch_presence(&user).await.expect("Failed to fetch presence");
 
-    // Send presence update to OFFLINE
     match presence {
         Presence::Offline => {}
         _ => {
-            app.gateway()
-                .dispatch(GatewayEvent::PresenceUpdate(PresenceUpdatePayload {
+            app.gateway().dispatch(
+                GatewayEvent::PresenceUpdate {
                     user_id: user.id(),
                     presence: Presence::Offline,
-                }));
+                },
+                SendMode::ToMutualGuilds(user.id()),
+            );
         }
     }
 }

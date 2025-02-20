@@ -1,16 +1,20 @@
 use chrono::Utc;
 
-use crate::models::{
-    attachment::{Attachment, AttachmentLike, FullAttachment},
-    avatar::{Avatar, AvatarLike},
-    channel::{Channel, ChannelLike, ChannelRecord, TextChannel},
-    errors::{AppError, BuildError, RESTError},
-    guild::{Guild, GuildRecord},
-    member::{ExtendedMemberRecord, Member, MemberRecord, UserLike},
-    message::{ExtendedMessageRecord, Message},
-    requests::{CreateGuild, CreateUser, UpdateGuild, UpdateMessage, UpdateUser},
-    snowflake::Snowflake,
-    user::{Presence, User, UserRecord},
+use crate::{
+    gateway::handler::{ConnectionId, SendMode},
+    models::{
+        attachment::{Attachment, AttachmentLike, FullAttachment},
+        avatar::{Avatar, AvatarLike},
+        channel::{Channel, ChannelLike, ChannelRecord, TextChannel},
+        errors::{AppError, BuildError, RESTError},
+        gateway_event::{GatewayEvent, GatewayMessage},
+        guild::{Guild, GuildRecord},
+        member::{ExtendedMemberRecord, Member, MemberRecord, UserLike},
+        message::{ExtendedMessageRecord, Message},
+        requests::{CreateGuild, CreateUser, UpdateGuild, UpdateMessage, UpdateUser},
+        snowflake::Snowflake,
+        user::{Presence, User, UserRecord},
+    },
 };
 
 use super::ApplicationState;
@@ -24,6 +28,60 @@ impl<'a> Ops<'a> {
     /// Create a new application state operations.
     pub const fn new(app: &'a ApplicationState) -> Self {
         Self { app }
+    }
+
+    /// Called when a message is received from a gateway connection.
+    ///
+    /// ## Arguments
+    ///
+    /// * `connection_id` - The ID of the connection that received the message.
+    /// * `message` - The message that was received.
+    pub async fn handle_inbound_gateway_message(&self, connection_id: ConnectionId, message: GatewayMessage) {
+        let res = match message {
+            GatewayMessage::StartTyping { channel_id } => self.trigger_typing(channel_id, connection_id.0).await,
+            GatewayMessage::Heartbeat | GatewayMessage::Identify { .. } => Ok(()),
+        };
+
+        if let Err(e) = res {
+            tracing::error!("Failed to handle gateway message: {:?}", e);
+        }
+    }
+
+    /// Triggers a typing start event for a given user in a channel.
+    ///
+    /// ## Arguments
+    ///
+    /// * `channel` - The channel to trigger the typing event in.
+    /// * `user` - The user to trigger the typing event for.
+    ///
+    /// ## Errors
+    ///
+    /// * [`AppError`] - If the database query fails.
+    pub async fn trigger_typing(
+        &self,
+        channel: impl Into<Snowflake<Channel>>,
+        user: impl Into<Snowflake<User>>,
+    ) -> Result<(), AppError> {
+        let channel_id = channel.into();
+        let guild_id = sqlx::query!(
+            "SELECT guild_id FROM channels WHERE id = $1",
+            channel_id as Snowflake<Channel>
+        )
+        .fetch_optional(self.app.db())
+        .await?
+        .map(|r| r.guild_id.into());
+
+        if let Some(guild_id) = guild_id {
+            self.app.gateway().dispatch(
+                GatewayEvent::TypingStart {
+                    user_id: user.into(),
+                    channel_id,
+                },
+                SendMode::ToGuild(guild_id),
+            );
+        }
+
+        Ok(())
     }
 
     /// Fetch a channel from the database by ID.

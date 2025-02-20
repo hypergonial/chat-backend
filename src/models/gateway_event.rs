@@ -3,20 +3,15 @@ use secrecy::Secret;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    channel::{Channel, ChannelLike},
+    channel::Channel,
     errors::AppError,
     guild::Guild,
-    member::{Member, UserLike},
+    member::Member,
     message::Message,
     snowflake::Snowflake,
     state::ApplicationState,
     user::{Presence, User},
 };
-
-pub trait EventLike {
-    fn extract_guild_id(&self) -> Option<Snowflake<Guild>>;
-    fn extract_user_id(&self) -> Option<Snowflake<User>>;
-}
 
 /// A JSON payload that can be received over the websocket by clients.
 /// All events are serialized in a way such that they are wrapped in a "data" field.
@@ -25,7 +20,7 @@ pub trait EventLike {
 #[serde(tag = "event", content = "data", rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum GatewayEvent {
     /// The initial message sent on connection.
-    Hello(HelloPayload),
+    Hello { heartbeat_interval: u64 },
     /// A heartbeat acknowledgement.
     HeartbeatAck,
     /// A chat message.
@@ -33,11 +28,18 @@ pub enum GatewayEvent {
     /// A chat message was updated.
     MessageUpdate(Message),
     /// A chat message was deleted.
-    MessageRemove(MessageRemovePayload),
+    MessageRemove {
+        id: Snowflake<Message>,
+        channel_id: Snowflake<Channel>,
+        guild_id: Option<Snowflake<Guild>>,
+    },
     /// A peer has joined the chat.
     MemberCreate(Member),
     /// A peer has left the chat.
-    MemberRemove(DeletePayload<User>),
+    MemberRemove {
+        id: Snowflake<User>,
+        guild_id: Snowflake<Guild>,
+    },
     /// A guild was created.
     GuildCreate(GuildCreatePayload),
     /// A guild was updated.
@@ -48,167 +50,41 @@ pub enum GatewayEvent {
     ChannelCreate(Channel),
     /// A channel was deleted.
     ChannelRemove(Channel),
-    // A user's presence was updated.
-    PresenceUpdate(PresenceUpdatePayload),
+    /// A user's presence was updated.
+    PresenceUpdate {
+        user_id: Snowflake<User>,
+        presence: Presence,
+    },
+    /// A user has started typing in a channel.
+    TypingStart {
+        user_id: Snowflake<User>,
+        channel_id: Snowflake<Channel>,
+    },
     /// The server is ready to accept messages.
-    Ready(ReadyPayload),
+    Ready { user: User, guilds: Vec<Guild> },
     /// A user's data was updated.
     UserUpdate(User),
     /// The server has closed the connection.
     InvalidSession(String),
 }
 
-// pain x_x
-impl EventLike for GatewayEvent {
-    fn extract_guild_id(&self) -> Option<Snowflake<Guild>> {
-        match self {
-            Self::MessageCreate(message) | Self::MessageUpdate(message) => message.extract_guild_id(),
-            Self::MessageRemove(payload) => payload.guild_id,
-            Self::MemberCreate(member) => member.extract_guild_id(),
-            Self::MemberRemove(payload) => payload.extract_guild_id(),
-            Self::GuildCreate(guild) => guild.extract_guild_id(),
-            Self::GuildRemove(payload) | Self::GuildUpdate(payload) => payload.extract_guild_id(),
-            Self::ChannelCreate(channel) => channel.extract_guild_id(),
-            Self::ChannelRemove(payload) => payload.extract_guild_id(),
-            Self::PresenceUpdate(_)
-            | Self::Hello(_)
-            | Self::Ready(_)
-            | Self::InvalidSession(_)
-            | Self::UserUpdate(_)
-            | Self::HeartbeatAck => None,
-        }
-    }
-
-    fn extract_user_id(&self) -> Option<Snowflake<User>> {
-        match self {
-            Self::MessageCreate(message) | Self::MessageUpdate(message) => message.extract_user_id(),
-            Self::MemberCreate(member) => member.extract_user_id(),
-            Self::MemberRemove(payload) => payload.extract_user_id(),
-            Self::GuildCreate(guild) => guild.extract_user_id(),
-            Self::GuildRemove(payload) | Self::GuildUpdate(payload) => payload.extract_user_id(),
-            Self::ChannelCreate(channel) => channel.extract_user_id(),
-            Self::ChannelRemove(payload) => payload.extract_user_id(),
-            Self::PresenceUpdate(payload) => Some(payload.user_id),
-            Self::Ready(payload) => payload.extract_user_id(),
-            Self::UserUpdate(user) => Some(user.id()),
-            Self::InvalidSession(_) | Self::HeartbeatAck | Self::Hello(_) | Self::MessageRemove(_) => None,
-        }
-    }
-}
-
-impl EventLike for Message {
-    fn extract_guild_id(&self) -> Option<Snowflake<Guild>> {
-        if let Some(UserLike::Member(member)) = &self.author() {
-            Some(member.guild_id())
-        } else {
-            None
-        }
-    }
-    fn extract_user_id(&self) -> Option<Snowflake<User>> {
-        self.author().as_ref().map(|userlike| userlike.id())
-    }
-}
-
-impl EventLike for Member {
-    fn extract_guild_id(&self) -> Option<Snowflake<Guild>> {
-        Some(self.guild_id())
-    }
-    fn extract_user_id(&self) -> Option<Snowflake<User>> {
-        Some(self.user().id())
-    }
-}
-
-impl EventLike for Channel {
-    fn extract_guild_id(&self) -> Option<Snowflake<Guild>> {
-        Some(self.guild_id())
-    }
-    fn extract_user_id(&self) -> Option<Snowflake<User>> {
-        None
-    }
-}
-
-impl EventLike for Guild {
-    fn extract_guild_id(&self) -> Option<Snowflake<Guild>> {
-        Some(self.id())
-    }
-    fn extract_user_id(&self) -> Option<Snowflake<User>> {
-        None
-    }
-}
-
-impl EventLike for User {
-    fn extract_guild_id(&self) -> Option<Snowflake<Guild>> {
-        None
-    }
-    fn extract_user_id(&self) -> Option<Snowflake<User>> {
-        Some(self.id())
-    }
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct HelloPayload {
-    heartbeat_interval: u64,
-}
-
-impl HelloPayload {
-    pub const fn new(heartbeat_interval: u64) -> Self {
-        Self { heartbeat_interval }
-    }
-}
-
-/// A wrapper object around an ID with an optional `guild_id` to aid gateway event filtering.
-/// TODO: This is kinda dumb, and should be probably removed with a gateway refactor
-#[derive(Debug, Clone, Serialize)]
-pub struct DeletePayload<T> {
-    id: Snowflake<T>,
-    guild_id: Option<Snowflake<Guild>>,
-}
-
-impl<T> DeletePayload<T> {
-    pub const fn new(id: Snowflake<T>, guild_id: Option<Snowflake<Guild>>) -> Self {
-        Self { id, guild_id }
-    }
-}
-
-impl EventLike for DeletePayload<User> {
-    fn extract_guild_id(&self) -> Option<Snowflake<Guild>> {
-        self.guild_id
-    }
-    fn extract_user_id(&self) -> Option<Snowflake<User>> {
-        None
-    }
-}
-
-/// Represents the payload of a `MESSAGE_DELETE` event.
-///
-/// This event is dispatched when a message is deleted.
-#[derive(Serialize, Clone, Debug)]
-pub struct MessageRemovePayload {
-    pub id: Snowflake<Message>,
-    pub channel_id: Snowflake<Channel>,
-    pub guild_id: Option<Snowflake<Guild>>,
-}
-
-impl MessageRemovePayload {
-    pub const fn new(
-        message_id: Snowflake<Message>,
+/// A JSON payload that can be sent over the websocket by clients.
+#[derive(Deserialize, Debug, Clone)]
+#[non_exhaustive]
+#[serde(tag = "event", content = "data", rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum GatewayMessage {
+    /// Identify with the server. This should be the first event sent by the client.
+    Identify {
+        /// The token to authenticate with.
+        token: Secret<String>,
+    },
+    /// A heartbeat message to indicate that the client is still active.
+    Heartbeat,
+    /// A message to start typing in a channel.
+    StartTyping {
+        /// The channel to start typing in.
         channel_id: Snowflake<Channel>,
-        guild_id: Option<Snowflake<Guild>>,
-    ) -> Self {
-        Self {
-            id: message_id,
-            channel_id,
-            guild_id,
-        }
-    }
-}
-
-/// Represents the payload of a `PRESENCE_UPDATE` event.
-/// In other words, when the user changes their status (e.g. 'Online' to 'Offline') this is the payload received.
-#[derive(Serialize, Clone, Debug)]
-pub struct PresenceUpdatePayload {
-    pub user_id: Snowflake<User>,
-    pub presence: Presence,
+    },
 }
 
 /// Represents a `GUILD_CREATE` payload.
@@ -249,51 +125,4 @@ impl GuildCreatePayload {
         let channels = app.ops().fetch_channels_for(&guild).await?;
         Ok(Self::new(guild, members, channels))
     }
-}
-
-impl EventLike for GuildCreatePayload {
-    fn extract_guild_id(&self) -> Option<Snowflake<Guild>> {
-        Some(self.guild.id())
-    }
-    fn extract_user_id(&self) -> Option<Snowflake<User>> {
-        None
-    }
-}
-
-/// A payload sent by the server to the client after a handshake.
-#[derive(Serialize, Debug, Clone)]
-pub struct ReadyPayload {
-    pub user: User,
-    pub guilds: Vec<Guild>,
-}
-
-impl ReadyPayload {
-    pub const fn new(user: User, guilds: Vec<Guild>) -> Self {
-        Self { user, guilds }
-    }
-}
-
-impl EventLike for ReadyPayload {
-    fn extract_guild_id(&self) -> Option<Snowflake<Guild>> {
-        None
-    }
-    fn extract_user_id(&self) -> Option<Snowflake<User>> {
-        Some(self.user.id())
-    }
-}
-
-/// A JSON payload that can be sent over the websocket by clients.
-#[derive(Deserialize, Debug, Clone)]
-#[non_exhaustive]
-#[serde(tag = "event", content = "data", rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum GatewayMessage {
-    /// Identify with the server. This should be the first event sent by the client.
-    Identify(IdentifyPayload),
-    /// A heartbeat message to indicate that the client is still active.
-    Heartbeat,
-}
-
-#[derive(Deserialize, Debug, Clone)]
-pub struct IdentifyPayload {
-    pub token: Secret<String>,
 }

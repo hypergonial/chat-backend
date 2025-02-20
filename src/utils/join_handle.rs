@@ -9,6 +9,7 @@ use tokio::task::{AbortHandle, JoinError, JoinHandle};
 /// A wrapper around [`JoinHandle`] that aborts the task when the handle is dropped.
 ///
 /// This can be useful when using join handles in `select!` for instance.
+#[derive(Debug)]
 pub struct AbortingJoinHandle<T> {
     inner: JoinHandle<T>,
 }

@@ -1,23 +1,26 @@
 use axum::{
+    Json, Router,
     extract::{Path, State},
     http::StatusCode,
     routing::{get, patch, post},
-    Json, Router,
 };
 use secrecy::ExposeSecret;
 use serde_json::json;
 use tower_http::limit::RequestBodyLimitLayer;
 
-use crate::models::{
-    auth::{Credentials, StoredCredentials, Token},
-    gateway_event::{GatewayEvent, PresenceUpdatePayload},
-    guild::Guild,
-    requests::CreateUser,
-    state::App,
-    user::{Presence, User},
-};
 use crate::models::{errors::RESTError, requests::UpdateUser};
 use crate::rest::auth::{generate_hash, validate_credentials};
+use crate::{
+    gateway::handler::SendMode,
+    models::{
+        auth::{Credentials, StoredCredentials, Token},
+        gateway_event::GatewayEvent,
+        guild::Guild,
+        requests::CreateUser,
+        state::App,
+        user::{Presence, User},
+    },
+};
 use serde_json::Value;
 
 pub fn get_router() -> Router<App> {
@@ -170,11 +173,13 @@ pub async fn update_presence(
     .await?;
 
     if app.gateway().is_connected(token.data().user_id()).await {
-        app.gateway()
-            .dispatch(GatewayEvent::PresenceUpdate(PresenceUpdatePayload {
+        app.gateway().dispatch(
+            GatewayEvent::PresenceUpdate {
                 presence: new_presence,
                 user_id: token.data().user_id(),
-            }));
+            },
+            SendMode::ToMutualGuilds(token.data().user_id()),
+        );
     }
 
     Ok(Json(new_presence))
@@ -205,7 +210,10 @@ pub async fn update_self(
     Json(payload): Json<UpdateUser>,
 ) -> Result<Json<User>, RESTError> {
     let user = payload.perform_request(&app, token.data().user_id()).await?;
-    app.gateway().dispatch(GatewayEvent::UserUpdate(user.clone()));
+    app.gateway().dispatch(
+        GatewayEvent::UserUpdate(user.clone()),
+        SendMode::ToMutualGuilds(user.id()),
+    );
 
     Ok(Json(user))
 }
