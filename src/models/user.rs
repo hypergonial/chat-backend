@@ -11,6 +11,7 @@ use crate::gateway::handler::Gateway;
 use super::{
     avatar::{Avatar, FullAvatar, PartialAvatar, UserAvatar},
     errors::BuildError,
+    omittableoption::OmittableOption,
     requests::{CreateUser, UpdateUser},
     snowflake::Snowflake,
     state::Config,
@@ -197,11 +198,11 @@ impl User {
     ///
     /// The avatar data still needs to be uploaded to S3.
     pub fn update(&mut self, request: UpdateUser) -> Result<(), BuildError> {
-        if let Some(username) = request.username {
+        if let Option::Some(username) = request.username {
             self.set_username(username)?;
         }
 
-        if let Some(ref display_name) = request.display_name {
+        if let OmittableOption::Some(ref display_name) = request.display_name {
             if display_name.len() < 3 {
                 return Err(BuildError::ValidationError(
                     "Display name must be at least 3 characters long".to_string(),
@@ -213,11 +214,20 @@ impl User {
             }
         }
 
-        self.display_name = request.display_name;
-
-        if let Some(uri) = request.avatar {
-            self.avatar = Some(Avatar::Full(FullAvatar::from_data_uri(&*self, uri)?));
+        if let Ok(display_name) = request.display_name.try_into() {
+            self.display_name = display_name;
         }
+
+        if let Ok(avatar) = request
+            .avatar
+            .map(|uri| FullAvatar::from_data_uri(&*self, uri))
+            .transpose()?
+            .map(Avatar::Full)
+            .try_into()
+        {
+            self.avatar = avatar;
+        }
+
         Ok(())
     }
 

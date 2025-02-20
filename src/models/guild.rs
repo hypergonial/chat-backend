@@ -104,9 +104,17 @@ impl Guild {
         if let Some(owner_id) = payload.owner_id {
             self.owner_id = owner_id;
         }
-        if let Some(avatar) = payload.avatar {
-            self.avatar = Some(Avatar::Full(FullAvatar::from_data_uri(self.id(), avatar)?));
+
+        if let Ok(avatar) = payload
+            .avatar
+            .map(|uri| FullAvatar::from_data_uri(self.id(), uri))
+            .transpose()?
+            .map(Avatar::Full)
+            .try_into()
+        {
+            self.avatar = avatar;
         }
+
         Ok(())
     }
 }

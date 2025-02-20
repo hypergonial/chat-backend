@@ -10,6 +10,7 @@ pub mod gateway_event;
 pub mod guild;
 pub mod member;
 pub mod message;
+pub mod omittableoption;
 pub mod prefs;
 pub mod requests;
 pub mod snowflake;

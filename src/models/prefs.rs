@@ -186,17 +186,3 @@ impl Prefs {
         Ok(())
     }
 }
-
-/* impl Default for Prefs {
-    fn default() -> Self {
-        Prefs {
-            user_id: Snowflake::default(),
-            flags: PrefFlags::default(),
-            message_grouping_timeout: 60,
-            layout: Layout::Normal,
-            text_size: 12,
-            locale: String::from("en_US"),
-        }
-    }
-}
- */

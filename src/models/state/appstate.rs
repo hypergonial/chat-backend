@@ -1,7 +1,4 @@
-use std::{
-    net::SocketAddr,
-    sync::{Arc, OnceLock},
-};
+use std::{net::SocketAddr, sync::Arc};
 
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::{
@@ -23,7 +20,7 @@ pub type S3Client = Client;
 /// Contains all the application state and manages application state changes.
 pub struct ApplicationState {
     db: Database,
-    gateway: OnceLock<Gateway>,
+    gateway: Gateway,
     pub config: Config,
     s3: Buckets,
 }
@@ -34,6 +31,10 @@ impl ApplicationState {
     /// ## Errors
     ///
     /// * [`AppError`] - If the application fails to initialize.
+    ///
+    /// ## Returns
+    ///
+    /// A new application state wrapped in an `Arc`.
     pub async fn new_shared() -> Result<Arc<Self>, AppError> {
         let config = Config::from_env();
 
@@ -57,9 +58,42 @@ impl ApplicationState {
 
         let mut state = Self {
             db: Database::new(),
-            gateway: OnceLock::new(),
+            gateway: Gateway::new(),
             config,
             s3: buckets,
+        };
+
+        state.init().await?;
+
+        Ok(Arc::new_cyclic(|w| {
+            state.db.bind_to(w.clone());
+            state.s3.bind_to(w.clone());
+            state.gateway.bind_to(w.clone());
+            state.gateway.start();
+            state
+        }))
+    }
+
+    /// Create a new application state from the individual components.
+    ///
+    /// ## Errors
+    ///
+    /// * [`AppError`] - If the application fails to initialize.
+    ///
+    /// ## Returns
+    ///
+    /// A new application state wrapped in an `Arc`.
+    pub async fn new_from_components(
+        db: Database,
+        gateway: Gateway,
+        config: Config,
+        s3: Buckets,
+    ) -> Result<Arc<Self>, AppError> {
+        let mut state = Self {
+            db,
+            gateway,
+            config,
+            s3,
         };
 
         state.init().await?;
@@ -67,16 +101,9 @@ impl ApplicationState {
         let shared_state = Arc::new_cyclic(|w| {
             state.db.bind_to(w.clone());
             state.s3.bind_to(w.clone());
+            state.gateway.bind_to(w.clone());
+            state.gateway.start();
             state
-        });
-
-        // The gateway needs the shared state to be initialized, but that only happens
-        // after the closure in new_cyclic returns. So we work around this with a OnceLock.
-        shared_state.gateway.get_or_init(|| {
-            let mut gateway = Gateway::new();
-            gateway.bind_to(Arc::downgrade(&shared_state));
-            gateway.start();
-            gateway
         });
 
         Ok(shared_state)
@@ -95,10 +122,8 @@ impl ApplicationState {
 
     /// The gateway instance of the application.
     #[inline]
-    pub fn gateway(&self) -> &Gateway {
-        self.gateway
-            .get()
-            .expect("Gateway not initialized, this should be impossible")
+    pub const fn gateway(&self) -> &Gateway {
+        &self.gateway
     }
 
     /// The S3 client instance of the application.

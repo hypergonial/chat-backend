@@ -448,12 +448,15 @@ impl<'a> Ops<'a> {
         }
 
         if old_guild.avatar() != guild.avatar() {
-            old_guild.avatar().map(|a| async { a.delete(self.app.s3()).await });
             match guild.avatar() {
                 Some(Avatar::Full(f)) => f.upload(self.app.s3()).await?,
                 _ => {
                     Err(BuildError::ValidationError("Cannot upload partial avatar".into()))?;
                 }
+            }
+
+            if let Some(a) = old_guild.avatar() {
+                a.delete(self.app.s3()).await?;
             }
         }
 
@@ -781,16 +784,16 @@ impl<'a> Ops<'a> {
         }
 
         if old_user.avatar() != user.avatar() {
-            if let Some(a) = old_user.avatar() {
-                a.delete(self.app.s3()).await?;
-            }
-
             match user.avatar() {
                 Some(Avatar::Full(f)) => f.upload(self.app.s3()).await?,
                 Some(Avatar::Partial(_)) => {
                     return Err(AppError::Unexpected("Cannot upload partial avatar".into()));
                 }
                 None => {}
+            }
+
+            if let Some(a) = old_user.avatar() {
+                a.delete(self.app.s3()).await?;
             }
         }
 

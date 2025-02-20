@@ -173,17 +173,22 @@ impl<K: AvatarKind> FullAvatar<K> {
 
     /// Build a new avatar from a data URI.
     ///
+    /// ## Arguments
+    ///
+    /// * `holder` - The ID of the object that holds this avatar.
+    /// * `uri` - The data URI of the image.
+    ///
     /// ## Errors
     ///
     /// * If the MIME type is not an image.
-    pub fn from_data_uri(user: impl Into<Snowflake<K::HolderType>>, uri: DataUri) -> Result<Self, BuildError> {
+    pub fn from_data_uri(holder: impl Into<Snowflake<K::HolderType>>, uri: DataUri) -> Result<Self, BuildError> {
         let mime = uri.mime().clone();
         let mut hasher = DefaultHasher::new();
         uri.hash(&mut hasher);
         let avatar_hash = format!("{}_{}", hasher.finish(), mime_to_img_ext(&mime));
 
         Self::builder()
-            .holder_id(user)
+            .holder_id(holder)
             .mime(uri.mime().clone())
             .content(uri)
             .avatar_hash(avatar_hash)

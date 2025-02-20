@@ -365,6 +365,10 @@ impl GatewayActor {
         }
     }
 
+    fn is_ready(&self) -> bool {
+        self.app.upgrade().is_some()
+    }
+
     fn app(&self) -> App {
         self.app
             .upgrade()
@@ -373,6 +377,11 @@ impl GatewayActor {
 
     pub async fn run(&mut self) {
         while let Some(instruction) = self.receiver.recv().await {
+            if !self.is_ready() && !matches!(instruction, Instruction::CloseAll(_)) {
+                tracing::warn!("App is not ready, ignoring instruction");
+                continue;
+            }
+
             match instruction {
                 Instruction::NewSession(id, handle) => self.add_handle(id, handle).await,
                 Instruction::RemoveSession(id) => self.remove_handle(id),
@@ -626,6 +635,7 @@ pub struct Gateway {
     sender: Option<mpsc::UnboundedSender<Instruction>>,
     task: Option<tokio::task::JoinHandle<()>>,
     app: Weak<ApplicationState>,
+    was_bound: bool,
 }
 
 impl Gateway {
@@ -634,21 +644,20 @@ impl Gateway {
             sender: None,
             task: None,
             app: Weak::new(),
+            was_bound: false,
         }
     }
 
     pub fn bind_to(&mut self, app: Weak<ApplicationState>) {
         self.app = app;
+        self.was_bound = true;
     }
 
     /// Start the gateway
     ///
     /// Starts the internal gateway actor and begins processing messages
     pub fn start(&mut self) {
-        assert!(
-            self.app.upgrade().is_some(),
-            "Gateway is not bound to an ApplicationState, cannot start"
-        );
+        assert!(self.was_bound, "Gateway was not bound to an application state");
 
         if let Some(a) = self.task.as_ref() {
             a.abort();

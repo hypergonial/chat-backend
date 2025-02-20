@@ -149,8 +149,8 @@ impl<DB: sqlx::Database, T> sqlx::Type<DB> for Snowflake<T>
 where
     i64: sqlx::Type<DB>,
 {
-    fn type_info() -> <DB as sqlx::Database>::TypeInfo {
-        <i64 as sqlx::Type<DB>>::type_info()
+    fn type_info() -> DB::TypeInfo {
+        i64::type_info()
     }
 }
 
@@ -160,9 +160,9 @@ where
 {
     fn encode_by_ref(
         &self,
-        buf: &mut <DB as sqlx::Database>::ArgumentBuffer<'q>,
+        buf: &mut DB::ArgumentBuffer<'q>,
     ) -> Result<sqlx::encode::IsNull, Box<dyn Error + Send + Sync>> {
-        <i64 as sqlx::Encode<DB>>::encode_by_ref(&self.value, buf)
+        i64::encode_by_ref(&self.value, buf)
     }
 }
 
@@ -170,15 +170,15 @@ impl<'r, DB: sqlx::Database, T> Decode<'r, DB> for Snowflake<T>
 where
     i64: Decode<'r, DB>,
 {
-    fn decode(value: <DB as sqlx::Database>::ValueRef<'r>) -> Result<Self, Box<dyn Error + Send + Sync>> {
-        let value = <i64 as Decode<DB>>::decode(value)?;
+    fn decode(value: DB::ValueRef<'r>) -> Result<Self, Box<dyn Error + Send + Sync>> {
+        let value = i64::decode(value)?;
         Ok(Self::new(value))
     }
 }
 
 impl<T> PgHasArrayType for Snowflake<T> {
     fn array_type_info() -> sqlx::postgres::PgTypeInfo {
-        <i64 as PgHasArrayType>::array_type_info()
+        i64::array_type_info()
     }
 }
 
@@ -190,4 +190,74 @@ pub fn get_generator(worker_id: i32, process_id: i32) -> SnowflakeIdGenerator {
         process_id,
         SystemTime::UNIX_EPOCH + std::time::Duration::from_millis(EPOCH as u64),
     )
+}
+
+#[cfg(test)]
+#[expect(clippy::unreadable_literal)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_and_default() {
+        let s = Snowflake::<()>::new(123456);
+        assert_eq!(i64::from(s), 123456);
+
+        let default = Snowflake::<()>::default();
+        assert_eq!(i64::from(default), 0);
+    }
+
+    #[test]
+    fn test_cast() {
+        let original = Snowflake::<u8>::new(987654);
+        let casted: Snowflake<u32> = original.cast();
+        assert_eq!(i64::from(original), i64::from(casted));
+    }
+
+    #[test]
+    fn test_timestamp_and_created_at() {
+        let ts = EPOCH + 1000;
+        let ts_component = ts - EPOCH;
+        let value = ts_component << 22;
+        let s = Snowflake::<()>::new(value);
+        assert_eq!(s.timestamp(), ts);
+
+        let expected_dt = DateTime::from_timestamp(ts / 1000, 0).expect("Datetime should be valid");
+        assert_eq!(s.created_at(), expected_dt);
+    }
+
+    #[test]
+    fn test_worker_and_process_ids() {
+        let ts_component = 2000;
+        let timestamp_bits = ts_component << 22;
+        let worker_bits = (15 & 0x1F) << 17;
+        let process_bits = (8 & 0x1F) << 12;
+        let value = timestamp_bits | worker_bits | process_bits;
+        let s = Snowflake::<()>::new(value);
+
+        assert_eq!(s.timestamp(), ts_component + EPOCH);
+        assert_eq!(s.worker_id(), 15);
+        assert_eq!(s.process_id(), 8);
+    }
+
+    #[test]
+    fn test_from_str_and_display() {
+        let num = 123456789012345678;
+        let s = Snowflake::<()>::new(num);
+        let s_str = s.to_string();
+        assert_eq!(s_str, num.to_string());
+
+        let parsed = Snowflake::from_str(&s_str).expect("Should parse correctly");
+        assert_eq!(parsed, s);
+    }
+
+    #[test]
+    fn test_serde_serialize_deserialize() {
+        let s = Snowflake::<()>::new(555555);
+        let serialized = serde_json::to_string(&s).expect("Serialization failed");
+        let expected = format!("\"{}\"", 555555);
+        assert_eq!(serialized, expected);
+
+        let deserialized: Snowflake<()> = serde_json::from_str(&serialized).expect("Deserialization failed");
+        assert_eq!(deserialized, s);
+    }
 }

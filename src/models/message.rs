@@ -199,9 +199,9 @@ impl Message {
     ///
     /// - `payload` - The update message payload
     pub fn apply_update(&mut self, payload: UpdateMessage) {
-        if let Some(content) = payload.content {
-            self.content = Some(content);
-            self.edited = true;
+        if let Ok(content) = Option::try_from(payload.content) {
+            self.edited = self.content != content;
+            self.content = content;
         }
     }
 

@@ -8,6 +8,7 @@ use super::{
     guild::Guild,
     member::Member,
     message::Message,
+    omittableoption::OmittableOption,
     prefs::{Layout, PrefFlags},
     snowflake::Snowflake,
     state::ApplicationState,
@@ -64,7 +65,7 @@ impl CreateGuild {
 pub struct UpdateGuild {
     pub name: Option<String>,
     pub owner_id: Option<Snowflake<User>>,
-    pub avatar: Option<DataUri>,
+    pub avatar: OmittableOption<DataUri>,
 }
 
 impl UpdateGuild {
@@ -99,8 +100,8 @@ pub enum CreateChannel {
 #[derive(Deserialize, Debug, Clone)]
 pub struct UpdateUser {
     pub username: Option<String>,
-    pub display_name: Option<String>,
-    pub avatar: Option<DataUri>,
+    pub display_name: OmittableOption<String>,
+    pub avatar: OmittableOption<DataUri>,
 }
 
 impl UpdateUser {
@@ -131,7 +132,7 @@ impl UpdateUser {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct UpdateMessage {
-    pub content: Option<String>,
+    pub content: OmittableOption<String>,
 }
 
 impl UpdateMessage {
