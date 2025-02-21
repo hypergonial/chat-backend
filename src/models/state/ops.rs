@@ -64,20 +64,14 @@ impl<'a> Ops<'a> {
         channel: impl Into<Snowflake<Channel>>,
         user: impl Into<Snowflake<User>>,
     ) -> Result<(), GatewayError> {
-        struct QueryOutput {
-            channel_guild_id: i64,
-            member_guild_id: Option<i64>,
-        }
-
         let channel_id = channel.into();
         let user_id = user.into();
 
-        let record = sqlx::query_as!(
-            QueryOutput,
-            "SELECT c.guild_id as channel_guild_id, m.guild_id as member_guild_id
+        let record = sqlx::query!(
+            r#"SELECT c.guild_id as channel_guild_id, m.guild_id as "member_guild_id?"
             FROM channels c
             LEFT JOIN members m ON m.guild_id = c.guild_id AND m.user_id = $2
-            WHERE c.id = $1",
+            WHERE c.id = $1"#,
             channel_id as Snowflake<Channel>,
             user_id as Snowflake<User>,
         )
