@@ -154,28 +154,25 @@ impl Display for ConnectionId {
 /// * `user_id` - The ID of the user
 /// * `guild_ids` - The guilds the user is a member of
 /// * `handles` - The session handles for the user
-/// * `receiver` - The receiver for receiving messages from the user
+/// * `broadcast` - The broadcast channel for incoming messages coming from sessions.
+///    Session handles will forward messages to this channel.
 #[derive(Debug)]
 struct UserHandle {
     user_id: Snowflake<User>,
     guild_ids: HashSet<Snowflake<Guild>>,
     handles: HashMap<Uuid, SessionHandle>,
-    receiver: Arc<broadcast::Sender<(ConnectionId, GatewayMessage)>>,
+    broadcast: Arc<broadcast::Sender<(ConnectionId, GatewayMessage)>>,
 }
 
 impl UserHandle {
-    pub fn new(
-        user: impl Into<Snowflake<User>>,
-        guild_ids: HashSet<Snowflake<Guild>>,
-        handles: HashMap<Uuid, SessionHandle>,
-    ) -> Self {
+    pub fn new(user: impl Into<Snowflake<User>>, guild_ids: HashSet<Snowflake<Guild>>) -> Self {
         let (sender, _) = broadcast::channel(100);
 
         Self {
             user_id: user.into(),
             guild_ids,
-            handles,
-            receiver: Arc::new(sender),
+            handles: HashMap::new(),
+            broadcast: Arc::new(sender),
         }
     }
 
@@ -195,7 +192,7 @@ impl UserHandle {
     ///
     /// A receiver for receiving messages from the user
     fn subscribe(&self) -> broadcast::Receiver<(ConnectionId, GatewayMessage)> {
-        self.receiver.subscribe()
+        self.broadcast.subscribe()
     }
 
     /// Get a handle to the connection handle with the given ID
@@ -232,10 +229,10 @@ impl UserHandle {
     ///
     /// A mutable reference to the connection handle
     #[expect(dead_code)]
-    pub fn get_or_insert(&mut self, id: Uuid, mut default: SessionHandle) -> &mut SessionHandle {
+    pub fn get_or_add(&mut self, id: Uuid, mut default: SessionHandle) -> &mut SessionHandle {
         match self.handles.entry(id) {
             Entry::Vacant(v) => {
-                default.bind_to(ConnectionId(self.user_id, id), &self.receiver);
+                default.bind_to(ConnectionId(self.user_id, id), &self.broadcast);
                 v.insert(default)
             }
             Entry::Occupied(o) => o.into_mut(),
@@ -264,8 +261,8 @@ impl UserHandle {
     /// ## Returns
     ///
     /// The ID of the inserted connection handle
-    pub fn insert_handle(&mut self, id: Uuid, mut handle: SessionHandle) -> Uuid {
-        handle.bind_to(ConnectionId(self.user_id, id), &self.receiver);
+    pub fn add_session(&mut self, id: Uuid, mut handle: SessionHandle) -> Uuid {
+        handle.bind_to(ConnectionId(self.user_id, id), &self.broadcast);
         self.handles.insert(id, handle);
         id
     }
@@ -277,9 +274,11 @@ impl UserHandle {
     /// * `id` - The ID of the connection handle to close
     /// * `code` - The close code to send
     /// * `reason` - The reason for closing the connection
-    pub fn close_handle(&mut self, id: Uuid, code: GatewayCloseCode, reason: String) {
+    pub fn close_session(&mut self, id: Uuid, code: GatewayCloseCode, reason: String) {
         if let Some(handle) = self.handles.get_mut(&id) {
-            handle.close(code, reason).ok();
+            if let Err(e) = handle.close(code, reason) {
+                tracing::warn!(error = %e, "Failed to close connection handle");
+            }
             self.handles.remove(&id);
         }
     }
@@ -289,7 +288,7 @@ impl UserHandle {
     /// ## Arguments
     ///
     /// * `id` - The ID of the connection handle to drop
-    pub fn drop_handle(&mut self, id: Uuid) {
+    pub fn drop_session(&mut self, id: Uuid) {
         self.handles.remove(&id);
     }
 
@@ -396,14 +395,11 @@ impl SessionHandle {
                         Err(RecvError::Lagged(e)) => {
                             tracing::warn!(error = %e, "Forwarder is lagging, dropping messages");
                         }
-                        Err(e) => {
-                            tracing::warn!(error = %e, "Failed to receive message from session");
-                            break;
-                        }
+                        Err(_) => break,
                     }
                 }
             })
-            .abort_on_drop(), // We don't want the task to leak if the handle is dropped
+            .abort_on_drop(), // We don't want the task to leak if the handle is dropped */
         );
     }
 
@@ -507,7 +503,7 @@ impl GatewayActor {
 
             match instruction {
                 Instruction::NewSession(id, handle) => self.add_session(id, handle).await,
-                Instruction::RemoveSession(id) => self.remove_session(id),
+                Instruction::RemoveSession(id) => self.drop_session(id),
                 Instruction::Dispatch(event, send_mode) => self.dispatch(event, send_mode),
                 Instruction::SendTo(user, event) => self.send_to(user, event),
                 Instruction::SendToSession(id, event) => self.send_to_session(id, event),
@@ -544,11 +540,9 @@ impl GatewayActor {
     ///
     /// * `peers` (write)
     async fn add_session(&mut self, id: ConnectionId, session: SessionHandle) {
-        if let Some(conn) = self.peermap.get_mut(&id.0) {
-            conn.insert_handle(id.1, session);
+        if let Some(user_handle) = self.peermap.get_mut(&id.0) {
+            user_handle.add_session(id.1, session);
         } else {
-            let mut sessions = HashMap::new();
-
             let guild_ids = sqlx::query!(
                 "SELECT guild_id FROM members WHERE user_id = $1",
                 id.0 as Snowflake<User>
@@ -560,9 +554,8 @@ impl GatewayActor {
             .map(|row| row.guild_id.into())
             .collect::<HashSet<Snowflake<Guild>>>();
 
-            sessions.insert(id.1, session);
-
-            let handle = UserHandle::new(id.0, guild_ids, sessions);
+            let mut handle = UserHandle::new(id.0, guild_ids);
+            handle.add_session(id.1, session);
             let mut receiver = handle.subscribe();
             let maybe_app = self.app.clone();
 
@@ -595,9 +588,9 @@ impl GatewayActor {
     /// ## Locks
     ///
     /// * `peers` (write)
-    fn remove_session(&mut self, id: ConnectionId) {
+    fn drop_session(&mut self, id: ConnectionId) {
         if let Some(conn) = self.peermap.get_mut(&id.0) {
-            conn.drop_handle(id.1);
+            conn.drop_session(id.1);
 
             if conn.is_empty() {
                 self.peermap.remove(&id.0);
@@ -642,7 +635,7 @@ impl GatewayActor {
             return;
         }
 
-        tracing::debug!(?event, "Dispatching event");
+        tracing::debug!(?event, "Dispatching");
 
         let mut to_drop: Vec<ConnectionId> = Vec::new();
 
@@ -683,7 +676,7 @@ impl GatewayActor {
         }
 
         for conn in to_drop {
-            self.remove_session(conn);
+            self.drop_session(conn);
         }
     }
 
@@ -711,7 +704,7 @@ impl GatewayActor {
         }
 
         for conn in to_drop {
-            self.remove_session(conn);
+            self.drop_session(conn);
         }
     }
 
@@ -732,7 +725,7 @@ impl GatewayActor {
 
         if let Err(err) = handle.send(event) {
             tracing::warn!(error = %err, "Error sending event to session: {id}");
-            self.remove_session(id);
+            self.drop_session(id);
         }
     }
 
@@ -743,10 +736,14 @@ impl GatewayActor {
     /// * `user_id` - The ID of the user to drop
     /// * `code` - The close code to send
     /// * `reason` - The reason for closing the connection
-    fn close_session(&mut self, conn: ConnectionId, code: GatewayCloseCode, reason: String) {
-        self.peermap.entry(conn.0).and_modify(|a| {
-            a.close_handle(conn.1, code, reason);
-        });
+    fn close_session(&mut self, conn_id: ConnectionId, code: GatewayCloseCode, reason: String) {
+        if let Some(user_handle) = self.peermap.get_mut(&conn_id.0) {
+            user_handle.close_session(conn_id.1, code, reason);
+
+            if user_handle.is_empty() {
+                self.peermap.remove(&conn_id.0);
+            }
+        }
     }
 
     /// Close all sessions from a user with the given code and reason
@@ -1140,20 +1137,21 @@ async fn send_serializable(
 ///
 /// * `ws_sink` - The sink for sending messages to the client
 ///
-/// ## Returns
-///
-/// `Ok(())` if the message was sent successfully, an error otherwise
+/// This fails silently if the close frame could not be sent, logging a warning
 async fn send_close_frame(
     ws_sink: &mut SplitSink<WebSocket, Message>,
     code: GatewayCloseCode,
     reason: impl Into<Utf8Bytes>,
-) -> Result<(), axum::Error> {
-    ws_sink
+) {
+    if let Err(e) = ws_sink
         .send(Message::Close(Some(CloseFrame {
             code: code.into(),
             reason: reason.into(),
         })))
         .await
+    {
+        tracing::warn!(error = %e, "Failed to send close frame");
+    }
 }
 
 /// Send HELLO, then wait for and validate the IDENTIFY payload
@@ -1185,27 +1183,27 @@ async fn handle_handshake(
 
     // IDENTIFY should be the first message sent
     let Ok(Some(Ok(ident))) = timeout(Duration::from_secs(5), ws_stream.next()).await else {
-        send_close_frame(ws_sink, GatewayCloseCode::PolicyViolation, "IDENTIFY expected").await?;
+        send_close_frame(ws_sink, GatewayCloseCode::PolicyViolation, "IDENTIFY expected").await;
         return Err(GatewayError::HandshakeFailure("IDENTIFY expected".into()));
     };
 
     let Message::Text(text) = ident else {
-        send_close_frame(ws_sink, GatewayCloseCode::Unsupported, "Unsupported message encoding").await?;
+        send_close_frame(ws_sink, GatewayCloseCode::Unsupported, "Unsupported message encoding").await;
         return Err(GatewayError::MalformedFrame("Unsupported message encoding".into()));
     };
 
     let Ok(GatewayMessage::Identify { token }) = serde_json::from_str(&text) else {
-        send_close_frame(ws_sink, GatewayCloseCode::InvalidPayload, "Invalid IDENTIFY payload").await?;
+        send_close_frame(ws_sink, GatewayCloseCode::InvalidPayload, "Invalid IDENTIFY payload").await;
         return Err(GatewayError::MalformedFrame("Invalid IDENTIFY payload".into()));
     };
 
     let Ok(token) = Token::validate(app.clone(), token.expose_secret()).await else {
-        send_close_frame(ws_sink, GatewayCloseCode::PolicyViolation, "Invalid token").await?;
+        send_close_frame(ws_sink, GatewayCloseCode::PolicyViolation, "Invalid token").await;
         return Err(GatewayError::AuthError("Invalid token".into()));
     };
 
     let Some(user) = app.ops().fetch_user(token.data().user_id()).await else {
-        send_close_frame(ws_sink, GatewayCloseCode::ServerError, "No user belongs to token").await?;
+        send_close_frame(ws_sink, GatewayCloseCode::ServerError, "No user belongs to token").await;
         return Err(GatewayError::InternalServerError("No user belongs to token".into()));
     };
 
@@ -1255,10 +1253,13 @@ async fn handle_heartbeating(
             };
 
             app.gateway().close_session(id, close_code, reason);
-            break;
+            // We must not break here as that causes a race condition where the heartbeat
+            // task may abort the sender task before the close message is sent
+            // The sender task will stop when seeing the close anyway and
+            // consequently abort all other WS tasks (including this one)
+        } else {
+            app.gateway().send_to_session(id, GatewayEvent::HeartbeatAck);
         }
-
-        app.gateway().send_to_session(id, GatewayEvent::HeartbeatAck);
     }
 }
 
@@ -1330,7 +1331,8 @@ async fn send_events(
     while let Some(payload) = receiver.next().await {
         match payload {
             GatewayResponse::Close(code, reason) => {
-                send_close_frame(&mut *ws_sink.lock().await, code, reason).await.ok();
+                tracing::debug!(?code, ?reason, "Closing connection for user {user_id}");
+                send_close_frame(&mut *ws_sink.lock().await, code, reason).await;
                 return Ok(code);
             }
             GatewayResponse::Event(event) => {
@@ -1371,13 +1373,13 @@ async fn receive_events(
                 GatewayCloseCode::Unsupported,
                 "Unsupported message encoding",
             )
-            .await
-            .ok();
+            .await;
             break;
         };
 
         match serde_json::from_str::<GatewayRequest>(&text) {
             Ok(GatewayRequest::Message(msg)) => {
+                tracing::debug!(?msg, "Received message from {conn_id}");
                 if let Err(e) = broadcaster.send(msg) {
                     tracing::error!(error = %e, "Failed to broadcast message, all receivers dropped");
                     send_close_frame(
@@ -1385,8 +1387,7 @@ async fn receive_events(
                         GatewayCloseCode::ServerError,
                         "Internal Server Error",
                     )
-                    .await
-                    .ok();
+                    .await;
                     break;
                 }
             }
@@ -1396,8 +1397,7 @@ async fn receive_events(
                     GatewayCloseCode::InvalidPayload,
                     format!("Invalid request payload: {e}"),
                 )
-                .await
-                .ok();
+                .await;
                 break;
             }
         }
@@ -1414,9 +1414,7 @@ async fn handle_connection(app: App, socket: WebSocket) {
     let (mut ws_sink, mut ws_stream) = socket.split();
 
     if !app.gateway().is_started() {
-        send_close_frame(&mut ws_sink, GatewayCloseCode::ServiceRestart, "Gateway is restarting")
-            .await
-            .ok();
+        send_close_frame(&mut ws_sink, GatewayCloseCode::ServiceRestart, "Gateway is restarting").await;
         return;
     }
 
