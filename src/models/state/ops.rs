@@ -6,7 +6,7 @@ use crate::{
         attachment::{Attachment, AttachmentLike, FullAttachment},
         avatar::{Avatar, AvatarLike},
         channel::{Channel, ChannelLike, ChannelRecord, TextChannel},
-        errors::{AppError, BuildError, RESTError},
+        errors::{AppError, BuildError, GatewayError, RESTError},
         gateway_event::{GatewayEvent, GatewayMessage},
         guild::{Guild, GuildRecord},
         member::{ExtendedMemberRecord, Member, MemberRecord, UserLike},
@@ -43,7 +43,9 @@ impl<'a> Ops<'a> {
         };
 
         if let Err(e) = res {
-            tracing::error!("Failed to handle gateway message: {:?}", e);
+            self.app
+                .gateway()
+                .close_session(connection_id, e.close_code(), e.to_string());
         }
     }
 
@@ -61,25 +63,38 @@ impl<'a> Ops<'a> {
         &self,
         channel: impl Into<Snowflake<Channel>>,
         user: impl Into<Snowflake<User>>,
-    ) -> Result<(), AppError> {
+    ) -> Result<(), GatewayError> {
+        struct QueryOutput {
+            channel_guild_id: i64,
+            member_guild_id: Option<i64>,
+        }
+
         let channel_id = channel.into();
-        let guild_id = sqlx::query!(
-            "SELECT guild_id FROM channels WHERE id = $1",
-            channel_id as Snowflake<Channel>
+        let user_id = user.into();
+
+        let record = sqlx::query_as!(
+            QueryOutput,
+            "SELECT c.guild_id as channel_guild_id, m.guild_id as member_guild_id
+            FROM channels c
+            LEFT JOIN members m ON m.guild_id = c.guild_id AND m.user_id = $2
+            WHERE c.id = $1",
+            channel_id as Snowflake<Channel>,
+            user_id as Snowflake<User>,
         )
         .fetch_optional(self.app.db())
-        .await?
-        .map(|r| r.guild_id.into());
+        .await?;
 
-        if let Some(guild_id) = guild_id {
-            self.app.gateway().dispatch(
-                GatewayEvent::TypingStart {
-                    user_id: user.into(),
-                    channel_id,
-                },
-                SendMode::ToGuild(guild_id),
-            );
+        let record = record.ok_or_else(|| AppError::NotFound("Channel not found".into()))?;
+        if record.member_guild_id.is_none() {
+            return Err(GatewayError::Forbidden("Cannot access resource".into()));
         }
+
+        let channel_guild_id: Snowflake<Guild> = record.channel_guild_id.into();
+
+        self.app.gateway().dispatch(
+            GatewayEvent::TypingStart { user_id, channel_id },
+            SendMode::ToGuild(channel_guild_id),
+        );
 
         Ok(())
     }

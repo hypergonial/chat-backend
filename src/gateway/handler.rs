@@ -18,6 +18,7 @@ use futures_util::{
     SinkExt, StreamExt,
     stream::{SplitSink, SplitStream},
 };
+use http::StatusCode;
 use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
 use tokio::{
@@ -124,6 +125,48 @@ impl From<u16> for GatewayCloseCode {
             1013 => Self::TryAgainLater,
             1014 => Self::BadGateway,
             1015 => Self::TLSHandshakeFail,
+            _ => Self::ServerError,
+        }
+    }
+}
+
+impl From<StatusCode> for GatewayCloseCode {
+    fn from(value: StatusCode) -> Self {
+        if !value.is_client_error() && !value.is_server_error() {
+            return Self::Normal;
+        }
+
+        match value {
+            StatusCode::PAYLOAD_TOO_LARGE | StatusCode::URI_TOO_LONG => Self::TooLarge,
+            StatusCode::UNSUPPORTED_MEDIA_TYPE
+            | StatusCode::RANGE_NOT_SATISFIABLE
+            | StatusCode::EXPECTATION_FAILED
+            | StatusCode::IM_A_TEAPOT
+            | StatusCode::MISDIRECTED_REQUEST
+            | StatusCode::HTTP_VERSION_NOT_SUPPORTED
+            | StatusCode::VARIANT_ALSO_NEGOTIATES => Self::Unsupported,
+            StatusCode::UNPROCESSABLE_ENTITY => Self::InvalidPayload,
+            StatusCode::LOCKED
+            | StatusCode::PRECONDITION_FAILED
+            | StatusCode::LENGTH_REQUIRED
+            | StatusCode::GONE
+            | StatusCode::CONFLICT
+            | StatusCode::REQUEST_TIMEOUT
+            | StatusCode::METHOD_NOT_ALLOWED
+            | StatusCode::NOT_ACCEPTABLE
+            | StatusCode::PROXY_AUTHENTICATION_REQUIRED
+            | StatusCode::NOT_FOUND
+            | StatusCode::FORBIDDEN
+            | StatusCode::UNAUTHORIZED
+            | StatusCode::BAD_REQUEST
+            | StatusCode::FAILED_DEPENDENCY
+            | StatusCode::PRECONDITION_REQUIRED
+            | StatusCode::TOO_MANY_REQUESTS
+            | StatusCode::REQUEST_HEADER_FIELDS_TOO_LARGE
+            | StatusCode::UNAVAILABLE_FOR_LEGAL_REASONS => Self::PolicyViolation,
+            StatusCode::BAD_GATEWAY => Self::BadGateway,
+            StatusCode::SERVICE_UNAVAILABLE => Self::ServiceRestart,
+            StatusCode::GATEWAY_TIMEOUT => Self::TryAgainLater,
             _ => Self::ServerError,
         }
     }

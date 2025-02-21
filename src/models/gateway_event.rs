@@ -64,8 +64,6 @@ pub enum GatewayEvent {
     Ready { user: User, guilds: Vec<Guild> },
     /// A user's data was updated.
     UserUpdate(User),
-    /// The server has closed the connection.
-    InvalidSession(String),
 }
 
 /// A JSON payload that can be sent over the websocket by clients.

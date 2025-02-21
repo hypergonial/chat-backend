@@ -17,7 +17,7 @@ After connecting to the gateway (located at `/gateway/v1`), the client will rece
 }
 ```
 
-This includes the heartbeat interval the client should use, in milliseconds. Your client **must** send `HEARTBEAT` events *at least* once every interval or it will be disconnected.
+This includes the heartbeat interval the client should use, in milliseconds. Your client **must** send [`HEARTBEAT`](./requests.md#heartbeat) requests *at least* once every interval or it will be disconnected.
 
 Example `HEARTBEAT`:
 
@@ -27,7 +27,7 @@ Example `HEARTBEAT`:
 }
 ```
 
-If successful, the server should immediately return a `HEARTBEAT_ACK` event.
+If successful, the server should immediately return a [`HEARTBEAT_ACK`](./events.md#heartbeat_ack) event.
 If the server did not acknowledge a heartbeat then the connection should be assumed dead and the client should disconnect. 
 
 ### Authentication

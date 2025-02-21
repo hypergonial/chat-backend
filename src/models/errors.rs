@@ -2,10 +2,10 @@ use std::num::ParseIntError;
 
 use aws_sdk_s3::error::{DisplayErrorContext, SdkError};
 use axum::{
+    Json,
     extract::multipart::MultipartError,
     http::StatusCode,
     response::{IntoResponse, Response},
-    Json,
 };
 use derive_builder::UninitializedFieldError;
 use jsonwebtoken::errors::ErrorKind;
@@ -13,6 +13,8 @@ use serde_json::json;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use thiserror::Error;
+
+use crate::gateway::handler::GatewayCloseCode;
 
 /// An error response returned by the REST API.
 #[derive(Debug, Clone)]
@@ -98,6 +100,15 @@ pub enum BuildError {
     ValidationError(String),
 }
 
+impl BuildError {
+    const fn status_code(&self) -> StatusCode {
+        match self {
+            Self::UninitializedField(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::ValidationError(_) => StatusCode::BAD_REQUEST,
+        }
+    }
+}
+
 impl From<UninitializedFieldError> for BuildError {
     fn from(e: UninitializedFieldError) -> Self {
         Self::UninitializedField(e.field_name())
@@ -112,10 +123,7 @@ impl From<String> for BuildError {
 
 impl IntoResponse for BuildError {
     fn into_response(self) -> Response {
-        let status = match self {
-            Self::UninitializedField(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::ValidationError(_) => StatusCode::BAD_REQUEST,
-        };
+        let status = self.status_code();
         if status == StatusCode::INTERNAL_SERVER_ERROR {
             tracing::error!(error = %self);
         }
@@ -147,15 +155,20 @@ pub enum AuthError {
     PasswordHash(#[from] argon2::password_hash::Error),
 }
 
-impl IntoResponse for AuthError {
-    fn into_response(self) -> Response {
-        let status = match self {
+impl AuthError {
+    const fn status_code(&self) -> StatusCode {
+        match self {
             Self::MissingCredentials | Self::TokenCreation | Self::InvalidToken | Self::InvalidCredentials => {
                 StatusCode::UNAUTHORIZED
             }
             Self::PasswordHash(_) => StatusCode::INTERNAL_SERVER_ERROR,
-        };
-        ErrResponse::new(status, self.to_string()).into_response()
+        }
+    }
+}
+
+impl IntoResponse for AuthError {
+    fn into_response(self) -> Response {
+        ErrResponse::new(self.status_code(), self.to_string()).into_response()
     }
 }
 
@@ -183,17 +196,17 @@ pub enum AppError {
     Auth(#[from] AuthError),
     #[error("Internal Server Error: {0}")]
     Axum(#[from] axum::Error),
-    #[error("Internal Server Error: {0}")]
-    Unexpected(String),
     #[error("Not Found: {0}")]
     NotFound(String),
+    #[error("Internal Server Error: {0}")]
+    Unexpected(String),
 }
 
-impl IntoResponse for AppError {
-    fn into_response(self) -> Response {
-        let status = match self {
+impl AppError {
+    pub fn status_code(&self) -> StatusCode {
+        match self {
             Self::Multipart(_) => StatusCode::UNPROCESSABLE_ENTITY,
-            Self::JWT(ref e) => {
+            Self::JWT(e) => {
                 if matches!(e.kind(), ErrorKind::ExpiredSignature) {
                     StatusCode::UNAUTHORIZED
                 } else {
@@ -201,11 +214,17 @@ impl IntoResponse for AppError {
                 }
             }
             Self::Regex(_) | Self::ParseInt(_) | Self::JSON(_) => StatusCode::BAD_REQUEST,
-            Self::Build(e) => return e.into_response(),
+            Self::Build(e) => e.status_code(),
             Self::Axum(_) | Self::Database(_) | Self::S3(_) | Self::Unexpected(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::Auth(e) => return e.into_response(),
+            Self::Auth(e) => e.status_code(),
             Self::NotFound(_) => StatusCode::NOT_FOUND,
-        };
+        }
+    }
+}
+
+impl IntoResponse for AppError {
+    fn into_response(self) -> Response {
+        let status = self.status_code();
         if status == StatusCode::INTERNAL_SERVER_ERROR {
             tracing::error!(error = %self);
         }
@@ -230,22 +249,38 @@ where
 pub enum GatewayError {
     #[error(transparent)]
     App(AppError),
-    #[error("Internal server error: {0}")]
+    #[error("Internal Server Error: {0}")]
     InternalServerError(String),
     #[error("Policy Violation: {0}")]
     PolicyViolation(String),
-    #[error("Malformed frame: {0}")]
+    #[error("Malformed Frame: {0}")]
     MalformedFrame(String),
-    #[error("Authentication error: {0}")]
+    #[error("Authentication Error: {0}")]
     AuthError(String),
-    #[error("Handshake failure: {0}")]
+    #[error("Handshake Failure: {0}")]
     HandshakeFailure(String),
+    #[error("Forbidden: {0}")]
+    Forbidden(String),
 }
 
 // Anything that can be converted into an AppError can be converted into a GatewayError
 impl<T: Into<AppError>> From<T> for GatewayError {
     fn from(e: T) -> Self {
         Self::App(e.into())
+    }
+}
+
+impl GatewayError {
+    pub fn close_code(&self) -> GatewayCloseCode {
+        match self {
+            Self::App(app_error) => app_error.status_code().into(),
+            Self::InternalServerError(_) => GatewayCloseCode::ServerError,
+            Self::PolicyViolation(_) | Self::AuthError(_) | Self::HandshakeFailure(_) => {
+                GatewayCloseCode::PolicyViolation
+            }
+            Self::MalformedFrame(_) => GatewayCloseCode::InvalidPayload,
+            Self::Forbidden(_) => GatewayCloseCode::PolicyViolation,
+        }
     }
 }
 
@@ -271,6 +306,20 @@ pub enum RESTError {
     BadRequest(String),
 }
 
+impl RESTError {
+    pub fn status_code(&self) -> StatusCode {
+        match self {
+            Self::App(e) => e.status_code(),
+            Self::InternalServerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::MissingField(_) | Self::MalformedField(_) | Self::DuplicateField(_) | Self::BadRequest(_) => {
+                StatusCode::BAD_REQUEST
+            }
+            Self::NotFound(_) => StatusCode::NOT_FOUND,
+            Self::Forbidden(_) => StatusCode::FORBIDDEN,
+        }
+    }
+}
+
 // Anything that can be converted into an AppError can be converted into a RESTError
 impl<T: Into<AppError>> From<T> for RESTError {
     fn from(e: T) -> Self {
@@ -280,18 +329,6 @@ impl<T: Into<AppError>> From<T> for RESTError {
 
 impl IntoResponse for RESTError {
     fn into_response(self) -> Response {
-        let status = match self {
-            Self::App(e) => return e.into_response(),
-            Self::InternalServerError(ref message) => {
-                tracing::error!(error = %message);
-                StatusCode::INTERNAL_SERVER_ERROR
-            }
-            Self::MissingField(_) | Self::MalformedField(_) | Self::DuplicateField(_) | Self::BadRequest(_) => {
-                StatusCode::BAD_REQUEST
-            }
-            Self::NotFound(_) => StatusCode::NOT_FOUND,
-            Self::Forbidden(_) => StatusCode::FORBIDDEN,
-        };
-        ErrResponse::new(status, self.to_string()).into_response()
+        ErrResponse::new(self.status_code(), self.to_string()).into_response()
     }
 }

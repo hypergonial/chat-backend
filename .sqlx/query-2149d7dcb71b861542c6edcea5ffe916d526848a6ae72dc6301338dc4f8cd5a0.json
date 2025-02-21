@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT c.guild_id as channel_guild_id, m.guild_id as member_guild_id\n            FROM channels c\n            LEFT JOIN members m ON m.guild_id = c.guild_id AND m.user_id = $2\n            WHERE c.id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "channel_guild_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "member_guild_id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "2149d7dcb71b861542c6edcea5ffe916d526848a6ae72dc6301338dc4f8cd5a0"
+}

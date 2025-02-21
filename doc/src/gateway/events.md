@@ -1,5 +1,7 @@
 # Events
 
+This page documents events clients may receive through the gateway, documenting when they occur and what data they contain.
+
 All events follow the following format:
 
 ```json
@@ -13,6 +15,40 @@ All events follow the following format:
 ```
 
 In the following descriptions, when talking about the `data` field, it is implied that the event is wrapped in an object with an `event` field, as shown above.
+
+## HELLO
+
+### Summary
+
+Sent as the first event by the server after connecting, including the **heartbeat interval** the client should use for this session.
+
+### Data
+
+The entire `data` field consists of a single integer, specifying the heartbeat interval in **milliseconds**.
+
+## READY
+
+### Summary
+
+Sent when the client has successfully authenticated and the server is ready to send events.
+
+### Data
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `user` | [`User`](../objects/user.md) | The client's user data. |
+| `guilds` | [`Guild[]`](../objects/guild.md) | The guilds the client is a member of. |
+
+## HEARTBEAT_ACK
+
+### Summary
+
+Sent by the server in response to a [`HEARTBEAT`](./requests.md#heartbeat) request.
+If the client does not receive this event within ~5 seconds, it should assume the connection is dead and proceed to reconnect.
+
+### Data
+
+This event contains no data.
 
 ## MESSAGE_CREATE
 
@@ -109,7 +145,7 @@ A [Guild](../objects/guild.md) object representing the updated guild.
 
 ### Summary
 
-A [`Guild`](../objects/guild.md) guild object representing the guild that was deleted.
+Sent when a guild is deleted.
 
 ### Data
 
@@ -135,35 +171,16 @@ Sent when a channel is deleted.
 
 A [Channel](../objects/channel.md) object representing the channel that was deleted.
 
-## HELLO
+## TYPING_START
 
 ### Summary
 
-Sent as the first event by the server after connecting, including the **heartbeat interval** the client should use for this session.
-
-### Data
-
-The entire `data` field consists of a single integer, specifying the heartbeat interval in **milliseconds**.
-
-## READY
-
-### Summary
-
-Sent when the client has successfully authenticated and the server is ready to send events.
+Sent when a user starts typing in a given channel. Clients may use this event to show a typing indicator.
+The typing indicator should be shown for a maximum of 6 seconds after the last `TYPING_START` event is received for the given user.
 
 ### Data
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `user` | [`User`](../objects/user.md) | The client's user data. |
-| `guilds` | [`Guild[]`](../objects/guild.md) | The guilds the client is a member of. |
-
-## INVALID_SESSION
-
-### Summary
-
-Sent when the client's session is invalidated. The client is expected to reconnect and send a new `IDENTIFY` payload. The websocket connection is terminated after this event is sent.
-
-### Data
-
-A `String` containing the reason for the session invalidation.
+| `user_id` | `Snowflake` | The user that started typing. |
+| `channel_id` | `Snowflake` | The channel the user started typing in. |
