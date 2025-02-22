@@ -1,11 +1,11 @@
 use std::sync::{Arc, Weak};
 
 use aws_sdk_s3::{
+    Client,
     error::SdkError,
     operation::head_bucket::HeadBucketError,
     primitives::ByteStream,
     types::{Delete, Object, ObjectIdentifier},
-    Client,
 };
 use bytes::{Bytes, BytesMut};
 use mime::Mime;

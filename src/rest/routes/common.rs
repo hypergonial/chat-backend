@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use axum::Router;
-use http::{header, Method};
+use http::{Method, header};
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::models::state::App;

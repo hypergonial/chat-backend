@@ -10,7 +10,7 @@ use std::{
 use chrono::prelude::*;
 use serde::{Deserialize, Serialize};
 use snowflake::SnowflakeIdGenerator;
-use sqlx::{postgres::PgHasArrayType, Decode, Encode};
+use sqlx::{Decode, Encode, postgres::PgHasArrayType};
 use std::time::SystemTime;
 
 use super::state::Config;

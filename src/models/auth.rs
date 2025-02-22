@@ -1,15 +1,15 @@
 use core::fmt::Debug;
 
-use axum::{extract::FromRequestParts, http::request::Parts, RequestPartsExt};
+use axum::{RequestPartsExt, extract::FromRequestParts, http::request::Parts};
 use axum_extra::{
-    headers::{
-        authorization::{Basic, Bearer},
-        Authorization,
-    },
     TypedHeader,
+    headers::{
+        Authorization,
+        authorization::{Basic, Bearer},
+    },
 };
 use chrono::prelude::*;
-use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
+use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use secrecy::{ExposeSecret, Secret};
 use serde::{Deserialize, Serialize};
 

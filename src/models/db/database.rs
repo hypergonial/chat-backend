@@ -1,6 +1,6 @@
 use std::sync::{Arc, Weak};
 
-use sqlx::{migrate, postgres::PgPool, Executor};
+use sqlx::{Executor, migrate, postgres::PgPool};
 
 use crate::models::state::ApplicationState;
 

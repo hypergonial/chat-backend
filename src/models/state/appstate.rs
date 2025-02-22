@@ -2,8 +2,8 @@ use std::{net::SocketAddr, sync::Arc};
 
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::{
-    config::{Credentials as S3Creds, Region},
     Client, Config as S3Config,
+    config::{Credentials as S3Creds, Region},
 };
 
 use derive_builder::Builder;

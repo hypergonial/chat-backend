@@ -1,8 +1,8 @@
 use axum::{
+    Json, Router,
     extract::State,
     http::StatusCode,
     routing::{get, patch},
-    Json, Router,
 };
 
 use crate::models::{auth::Token, prefs::Prefs};

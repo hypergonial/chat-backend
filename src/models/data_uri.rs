@@ -4,8 +4,8 @@ use bytes::Bytes;
 use data_url::DataUrl;
 use mime::{FromStrError, Mime};
 use serde::{
-    de::{self, Unexpected, Visitor},
     Deserialize, Deserializer,
+    de::{self, Unexpected, Visitor},
 };
 
 /// A wrapper around `DataUrl` that implements `Deserialize` and a couple of other useful traits.

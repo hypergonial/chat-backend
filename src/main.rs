@@ -5,7 +5,7 @@ pub mod models;
 pub mod rest;
 pub mod utils;
 
-use axum::{extract::Request, Router, ServiceExt};
+use axum::{Router, ServiceExt, extract::Request};
 use color_eyre::eyre::Result;
 use mimalloc::MiMalloc;
 use models::state::App;
@@ -17,7 +17,7 @@ use tower_http::{normalize_path::NormalizePathLayer, trace::TraceLayer};
 use tracing::level_filters::LevelFilter;
 
 #[cfg(unix)]
-use tokio::signal::unix::{signal, SignalKind};
+use tokio::signal::unix::{SignalKind, signal};
 
 use crate::models::state::ApplicationState;
 

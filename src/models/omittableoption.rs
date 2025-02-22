@@ -1,6 +1,6 @@
 use std::{cmp::Ordering, marker::PhantomData};
 
-use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Visitor};
 
 /// A value that can be correctly deserialized from a JSON object field that is either:
 /// - omitted (field omitted)
