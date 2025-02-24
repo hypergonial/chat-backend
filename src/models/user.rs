@@ -189,6 +189,10 @@ impl User {
     ///
     /// * `request` - The update request.
     ///
+    /// ## Returns
+    ///
+    /// Whether the user's avatar was updated, requiring an upload to S3.
+    ///
     /// ## Errors
     ///
     /// * [`BuildError::ValidationError`] - If the new username is invalid.
@@ -197,7 +201,7 @@ impl User {
     /// ## Note
     ///
     /// The avatar data still needs to be uploaded to S3.
-    pub fn update(&mut self, request: UpdateUser) -> Result<(), BuildError> {
+    pub fn update(&mut self, request: UpdateUser) -> Result<bool, BuildError> {
         if let Option::Some(username) = request.username {
             self.set_username(username)?;
         }
@@ -226,9 +230,10 @@ impl User {
             .try_into()
         {
             self.avatar = avatar;
+            return Ok(true);
         }
 
-        Ok(())
+        Ok(false)
     }
 
     /// Transform this object to also include the user's presence.

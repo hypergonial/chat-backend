@@ -98,13 +98,16 @@ pub enum BuildError {
     /// A validation check failed.
     #[error("Validation error: {0}")]
     ValidationError(String),
+
+    #[error("Illegal state: {0}")]
+    IllegalState(String),
 }
 
 impl BuildError {
     const fn status_code(&self) -> StatusCode {
         match self {
-            Self::UninitializedField(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::ValidationError(_) => StatusCode::BAD_REQUEST,
+            Self::IllegalState(_) | Self::UninitializedField(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }

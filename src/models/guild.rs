@@ -94,10 +94,14 @@ impl Guild {
     ///
     /// * `payload` - The update payload.
     ///
+    /// ## Returns
+    ///
+    /// Whether the guild's avatar was updated, requiring an upload to S3.
+    ///
     /// ## Errors
     ///
     /// * [`AppError::Build`] - If the avatar data URI is invalid.
-    pub fn update(&mut self, payload: UpdateGuild) -> Result<(), AppError> {
+    pub fn update(&mut self, payload: UpdateGuild) -> Result<bool, AppError> {
         if let Some(name) = payload.name {
             self.name = name;
         }
@@ -113,9 +117,10 @@ impl Guild {
             .try_into()
         {
             self.avatar = avatar;
+            return Ok(true);
         }
 
-        Ok(())
+        Ok(false)
     }
 }
 

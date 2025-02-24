@@ -508,17 +508,17 @@ impl<'a> Ops<'a> {
     /// * [`sqlx::Error`] - If the database query fails.
     pub async fn update_guild(&self, payload: UpdateGuild, old_guild: &Guild) -> Result<Guild, AppError> {
         let mut guild = old_guild.clone();
-        guild.update(payload)?;
+        let needs_s3_update = guild.update(payload)?;
 
         if old_guild == &guild {
             return Ok(guild);
         }
 
-        if old_guild.avatar() != guild.avatar() {
+        if needs_s3_update {
             match guild.avatar() {
                 Some(Avatar::Full(f)) => f.upload(self.app.s3()).await?,
                 _ => {
-                    Err(BuildError::ValidationError("Cannot upload partial avatar".into()))?;
+                    Err(BuildError::IllegalState("Cannot upload partial avatar".into()))?;
                 }
             }
 
@@ -844,17 +844,17 @@ impl<'a> Ops<'a> {
             .ok_or(AppError::NotFound("User not found".into()))?;
 
         let mut user = old_user.clone();
-        user.update(payload)?;
+        let needs_s3_update = user.update(payload)?;
 
         if old_user == user {
             return Ok(user);
         }
 
-        if old_user.avatar() != user.avatar() {
+        if needs_s3_update {
             match user.avatar() {
                 Some(Avatar::Full(f)) => f.upload(self.app.s3()).await?,
                 Some(Avatar::Partial(_)) => {
-                    return Err(AppError::Unexpected("Cannot upload partial avatar".into()));
+                    return Err(BuildError::IllegalState("Cannot upload partial avatar".into()).into());
                 }
                 None => {}
             }
