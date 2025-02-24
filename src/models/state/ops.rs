@@ -39,7 +39,8 @@ impl<'a> Ops<'a> {
     pub async fn handle_inbound_gateway_message(&self, connection_id: ConnectionId, message: GatewayMessage) {
         let res = match message {
             GatewayMessage::StartTyping { channel_id } => self.trigger_typing(channel_id, connection_id.0).await,
-            GatewayMessage::Heartbeat | GatewayMessage::Identify { .. } => Ok(()),
+            GatewayMessage::Identify { .. } => Err(GatewayError::AuthError("Already identified".into())),
+            GatewayMessage::Heartbeat => Ok(()),
         };
 
         if let Err(e) = res {

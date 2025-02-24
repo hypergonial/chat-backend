@@ -1193,7 +1193,7 @@ async fn send_close_frame(
         })))
         .await
     {
-        tracing::warn!(error = %e, "Failed to send close frame");
+        tracing::debug!(error = %e, "Failed to send close frame");
     }
 }
 
