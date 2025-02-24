@@ -517,9 +517,10 @@ impl<'a> Ops<'a> {
         if needs_s3_update {
             match guild.avatar() {
                 Some(Avatar::Full(f)) => f.upload(self.app.s3()).await?,
-                _ => {
+                Some(Avatar::Partial(_)) => {
                     Err(BuildError::IllegalState("Cannot upload partial avatar".into()))?;
                 }
+                None => {}
             }
 
             if let Some(a) = old_guild.avatar() {
