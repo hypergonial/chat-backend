@@ -65,6 +65,7 @@ impl CreateGuild {
 pub struct UpdateGuild {
     pub name: Option<String>,
     pub owner_id: Option<Snowflake<User>>,
+    #[serde(default)]
     pub avatar: OmittableOption<DataUri>,
 }
 
@@ -100,7 +101,9 @@ pub enum CreateChannel {
 #[derive(Deserialize, Debug, Clone)]
 pub struct UpdateUser {
     pub username: Option<String>,
+    #[serde(default)]
     pub display_name: OmittableOption<String>,
+    #[serde(default)]
     pub avatar: OmittableOption<DataUri>,
 }
 
@@ -132,6 +135,7 @@ impl UpdateUser {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct UpdateMessage {
+    #[serde(default)]
     pub content: OmittableOption<String>,
 }
 

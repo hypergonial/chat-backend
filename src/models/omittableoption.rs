@@ -1,6 +1,6 @@
-use std::{cmp::Ordering, marker::PhantomData};
+use std::cmp::Ordering;
 
-use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Visitor};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// A value that can be correctly deserialized from a JSON object field that is either:
 /// - omitted (field omitted)
@@ -9,6 +9,17 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Visitor};
 ///
 /// This is useful when you want to distinguish between a field that is omitted and a field that
 /// is explicitly set to null.
+///
+/// ## Note:
+///
+/// You must annotate the field with the following to make this work correctly, due to serde limitations:
+///
+/// ```
+/// #[serde(default)]
+/// #[serde(skip_serializing_if = "OmittableOption::is_omitted")]
+/// some_field: OmittableOption<T>
+/// ```
+///
 #[derive(Debug, Default)]
 pub enum OmittableOption<T> {
     Some(T),
@@ -183,41 +194,7 @@ where
     where
         D: Deserializer<'de>,
     {
-        deserializer.deserialize_option(OmittableOptionVisitor::<T> {
-            marker: std::marker::PhantomData,
-        })
-    }
-}
-
-struct OmittableOptionVisitor<T> {
-    marker: PhantomData<T>,
-}
-
-impl<'de, T> Visitor<'de> for OmittableOptionVisitor<T>
-where
-    T: Deserialize<'de>,
-{
-    type Value = OmittableOption<T>;
-
-    #[inline]
-    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("a value that is either null, omitted, or a valid value")
-    }
-
-    #[inline]
-    fn visit_none<E>(self) -> Result<OmittableOption<T>, E>
-    where
-        E: serde::de::Error,
-    {
-        Ok(OmittableOption::None)
-    }
-
-    #[inline]
-    fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        T::deserialize(deserializer).map(OmittableOption::Some)
+        Option::deserialize(deserializer).map(Into::into)
     }
 }
 
@@ -230,6 +207,14 @@ mod tests {
     struct TestWrapper {
         #[serde(default)]
         value: OmittableOption<i32>,
+    }
+
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    struct MoreComplexTestWrapper {
+        #[serde(default)]
+        value: OmittableOption<i32>,
+        #[serde(default)]
+        other_value: OmittableOption<String>,
     }
 
     #[test]
@@ -251,6 +236,30 @@ mod tests {
         let json_str = r#"{"value": 42}"#;
         let obj: TestWrapper = serde_json::from_str(json_str).expect("Deserialization failed");
         assert_eq!(obj.value, OmittableOption::Some(42));
+    }
+
+    #[test]
+    fn test_complex_deserialize_omitted() {
+        let json_str = r#"{"value": 42}"#;
+        let obj: MoreComplexTestWrapper = serde_json::from_str(json_str).expect("Deserialization failed");
+        assert_eq!(obj.value, OmittableOption::Some(42));
+        assert_eq!(obj.other_value, OmittableOption::Omitted);
+    }
+
+    #[test]
+    fn test_complex_deserialize_null() {
+        let json_str = r#"{"value": 42, "other_value": null}"#;
+        let obj: MoreComplexTestWrapper = serde_json::from_str(json_str).expect("Deserialization failed");
+        assert_eq!(obj.value, OmittableOption::Some(42));
+        assert_eq!(obj.other_value, OmittableOption::None);
+    }
+
+    #[test]
+    fn test_complex_deserialize_some() {
+        let json_str = r#"{"value": 42, "other_value": "Hello, world!"}"#;
+        let obj: MoreComplexTestWrapper = serde_json::from_str(json_str).expect("Deserialization failed");
+        assert_eq!(obj.value, OmittableOption::Some(42));
+        assert_eq!(obj.other_value, OmittableOption::Some(String::from("Hello, world!")));
     }
 
     #[test]
