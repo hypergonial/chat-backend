@@ -2,7 +2,7 @@
 
 ## Overview
 
-The preferences object is used to store and retrieve user preferences. It is up to implementing clients to support and implement these features. It currently supports & stores the following values:
+The preferences object is used to store and retrieve user preferences. It is up to implementing clients to support and implement these features, should they choose to. It currently supports & stores the following values:
 
 | Key | Type | Description |
 | --- | --- | --- |

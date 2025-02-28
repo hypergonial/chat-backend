@@ -30,7 +30,7 @@ The entire `data` field consists of a single integer, specifying the heartbeat i
 
 ### Summary
 
-Sent when the client has successfully authenticated and the server is ready to send events.
+Sent when the client has successfully authenticated and the server is ready to send events. A sequence of [`GUILD_CREATE`](#guild_create) events will follow this event, containing more extensive information about each guild the user is a member of.
 
 ### Data
 
@@ -38,6 +38,7 @@ Sent when the client has successfully authenticated and the server is ready to s
 | --- | --- | --- |
 | `user` | [`User`](../objects/user.md) | The client's user data. |
 | `guilds` | [`Guild[]`](../objects/guild.md) | The guilds the client is a member of. |
+| `read_states` | [`ReadState[]`](../objects/read_state.md) | The user's read states for each channel. |
 
 ## HEARTBEAT_ACK
 
@@ -83,6 +84,20 @@ Sent when a message is removed in a channel that the currently authenticated use
 | `id` | `Snowflake` | The ID of the message that was removed. |
 | `channel_id` | `Snowflake` | The channel's ID the message was part of. |
 | `guild_id` | `Snowflake` | The guild's ID the message was part of. |
+
+## MESSAGE_ACK
+
+### Summary
+
+Sent when a session belonging to the currently authenticated user acknowledges a message. This can be used to synchronize read states between multiple connected sessions.
+
+### Data
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `channel_id` | `Snowflake` | The ID of the channel the message was acknowledged in. |
+| `message_id` | `Snowflake` | The ID of the message that was acknowledged. |
+
 
 ## MEMBER_CREATE
 

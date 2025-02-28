@@ -61,7 +61,7 @@ An array of [Message](../objects/message.md) objects.
 
 ### Summary
 
-Sends a message to a channel. Dispatches the [MESSAGE_CREATE](../gateway/events.md#message_create) gateway event.
+Sends a message to a channel. Dispatches the [MESSAGE_CREATE](../gateway/events.md#message_create) gateway event to all guild members.
 
 ### Payload
 
@@ -70,7 +70,7 @@ This endpoint expects a `multipart/form-data` payload. The following fields are 
 | Name | Type | Description |
 | ---- | ---- | ----------- |
 | json | application/json | Valid json that represents the message's textually representable information |
-| attachment-0..9 | application/octet-stream | A file to attach to the message. The `filename` field is mandatory. |
+| attachment-0..9 | Any valid MIME | A file to attach to the message. The `filename` field is mandatory. |
 
 > Note: While both `json` and `attachment` are optional, at least one of them **must** be present.
 
@@ -117,7 +117,7 @@ The created [Message](../objects/message.md) object.
 
 ### Summary
 
-Updates a message with new data. All fields are optional, and all fields specified will overwrite the current values. Dispatches the [MESSAGE_UPDATE](../gateway/events.md#message_update) gateway event.
+Updates a message with new data. All fields are optional, and all fields specified will overwrite the current values. Dispatches the [MESSAGE_UPDATE](../gateway/events.md#message_update) gateway event to all guild members.
 
 ### Payload
 
@@ -140,7 +140,7 @@ The updated [Message](../objects/message.md) object.
 
 ### Summary
 
-Deletes the message. Dispatches the [MESSAGE_REMOVE](../gateway/events.md#message_remove) gateway event.
+Deletes the message. Dispatches the [MESSAGE_REMOVE](../gateway/events.md#message_remove) gateway event to all guild members.
 
 ### Errors
 
@@ -148,3 +148,18 @@ Deletes the message. Dispatches the [MESSAGE_REMOVE](../gateway/events.md#messag
 | ---- | ----------- |
 | 403  | The user has no permission to delete the message. |
 | 404  | The message or channel was not found. |
+
+# /channels/\{channel_id\}/messages/\{message_id\}/ack
+
+## POST
+
+### Summary
+
+Acknowledges a message. Dispatches the [MESSAGE_ACK](../gateway/events.md#message_ack) gateway event to all sessions of the currently authenticated user.
+
+### Errors
+
+| Code | Description |
+| ---- | ----------- |
+| 404  | The channel was not found. |
+| 403  | The user is not in the guild the channel is located in. |

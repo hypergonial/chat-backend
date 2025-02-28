@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use futures::future::join_all;
 use secrecy::Secret;
 use serde::{Deserialize, Serialize};
@@ -71,7 +69,7 @@ pub enum GatewayEvent {
     Ready {
         user: User,
         guilds: Vec<Guild>,
-        read_states: HashMap<Snowflake<Channel>, Snowflake<Message>>,
+        read_states: Vec<ReadStateEntry>,
     },
     /// A user's data was updated.
     UserUpdate(User),
@@ -94,6 +92,12 @@ pub enum GatewayMessage {
         /// The channel to start typing in.
         channel_id: Snowflake<Channel>,
     },
+}
+
+#[derive(Serialize, Debug, Clone)]
+pub struct ReadStateEntry {
+    pub channel_id: Snowflake<Channel>,
+    pub message_id: Snowflake<Message>,
 }
 
 /// Represents a `GUILD_CREATE` payload.
