@@ -5,7 +5,6 @@ use axum::{
     routing::{delete, get, patch, post},
 };
 use serde::{Deserialize, Serialize};
-use tower_http::limit::RequestBodyLimitLayer;
 
 use crate::{
     gateway::handler::SendMode,
@@ -38,12 +37,14 @@ pub fn get_router() -> Router<App> {
     Router::new()
         .route("/channels/{channel_id}", get(fetch_channel))
         .route("/channels/{channel_id}", delete(delete_channel))
-        .route("/channels/{channel_id}/messages", post(create_message))
+        .route(
+            "/channels/{channel_id}/messages",
+            post(create_message).layer(DefaultBodyLimit::max(8 * 1024 * 1024 /* 8mb */)),
+        )
         .route("/channels/{channel_id}/messages", get(fetch_messages))
         .route("/channels/{channel_id}/messages/{message_id}", patch(update_message))
         .route("/channels/{channel_id}/messages/{message_id}", delete(delete_message))
-        .layer(DefaultBodyLimit::disable())
-        .layer(RequestBodyLimitLayer::new(8 * 1024 * 1024 /* 8mb */))
+        .route("/channels/{channel_id}/messages/{message_id}/ack", post(ack_message))
 }
 
 /// Fetch a channel's data.
@@ -318,7 +319,7 @@ async fn fetch_messages(
     app.ops()
         .fetch_member(token.data().user_id(), channel.guild_id())
         .await?
-        .ok_or(RESTError::Forbidden("Not permitted to view resource.".into()))?;
+        .ok_or(RESTError::Forbidden("Not permitted to access resource.".into()))?;
 
     let messages = app
         .ops()
@@ -326,4 +327,47 @@ async fn fetch_messages(
         .await?;
 
     Ok((StatusCode::OK, Json(messages)))
+}
+
+/// Acknowledge a message. This will update the user's read state for the message.
+///
+/// Dispatches a [`GatewayEvent::MessageAck`] to all connected sessions of the user.
+///
+/// ## Arguments
+///
+/// * `channel_id` - The ID of the channel the message is in
+/// * `message_id` - The ID of the message to acknowledge
+///
+/// ## Returns
+///
+/// * [`StatusCode`] - 204 No Content if successful
+///
+/// ## Endpoint
+///
+/// POST `/channels/{channel_id}/messages/{message_id}/ack`
+async fn ack_message(
+    Path((channel_id, message_id)): Path<(Snowflake<Channel>, Snowflake<Message>)>,
+    State(app): State<App>,
+    token: Token,
+) -> Result<StatusCode, RESTError> {
+    let channel = app
+        .ops()
+        .fetch_channel(channel_id)
+        .await
+        .ok_or(RESTError::NotFound("Channel not found.".into()))?;
+
+    if !app.ops().has_member(channel.guild_id(), token.data().user_id()).await? {
+        return Err(RESTError::Forbidden("Not permitted to access resource.".into()));
+    }
+
+    app.ops()
+        .update_read_state(token.data().user_id(), channel_id, message_id)
+        .await?;
+
+    app.gateway().dispatch(
+        GatewayEvent::MessageAck { channel_id, message_id },
+        SendMode::ToUser(token.data().user_id()),
+    );
+
+    Ok(StatusCode::NO_CONTENT)
 }

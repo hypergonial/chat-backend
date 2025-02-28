@@ -53,7 +53,7 @@ pub fn get_router() -> Router<App> {
 async fn create_user(State(app): State<App>, Json(payload): Json<CreateUser>) -> Result<Json<User>, RESTError> {
     let password = payload.password.clone();
 
-    if app.ops().fetch_user_by_username(&payload.username).await.is_some() {
+    if app.ops().is_username_taken(&payload.username).await? {
         return Err(RESTError::BadRequest(format!(
             "User with username {} already exists",
             payload.username
@@ -105,13 +105,11 @@ async fn auth_user(State(app): State<App>, credentials: Credentials) -> Result<J
 ///
 /// GET `/users/@me`
 async fn fetch_self(State(app): State<App>, token: Token) -> Result<Json<User>, RESTError> {
-    let user = app
-        .ops()
+    app.ops()
         .fetch_user(token.data().user_id())
         .await
-        .ok_or(RESTError::NotFound("User not found".into()))?;
-
-    Ok(Json(user))
+        .ok_or(RESTError::NotFound("User not found".into()))
+        .map(Json)
 }
 
 /// Fetch a user's guilds.
@@ -224,6 +222,10 @@ pub async fn update_self(
 ///
 /// * `username` - The username to check for
 ///
+/// ## Returns
+///
+/// * `204 No Content` - If the user exists
+///
 /// ## Errors
 ///
 /// * [`RESTError::NotFound`] - If the user is not found
@@ -233,10 +235,9 @@ pub async fn update_self(
 ///
 /// GET `/users/{username}`
 pub async fn query_username(State(app): State<App>, Path(username): Path<String>) -> Result<StatusCode, RESTError> {
-    sqlx::query!("SELECT id FROM users WHERE username = $1", username)
-        .fetch_optional(app.db())
-        .await?
-        .ok_or(RESTError::NotFound("User not found".into()))?;
-
-    Ok(StatusCode::OK)
+    if app.ops().is_username_taken(&username).await? {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(RESTError::NotFound("User not found".into()))
+    }
 }

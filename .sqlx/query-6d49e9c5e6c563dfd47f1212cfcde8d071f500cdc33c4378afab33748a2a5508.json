@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO read_states (user_id, channel_id, message_id)\n            VALUES ($1, $2, $3)\n            ON CONFLICT (user_id, channel_id) DO UPDATE\n            SET message_id = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6d49e9c5e6c563dfd47f1212cfcde8d071f500cdc33c4378afab33748a2a5508"
+}

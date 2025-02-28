@@ -68,17 +68,17 @@
       ]
     },
     "nullable": [
-      true,
-      true,
-      true,
-      true,
-      true,
-      true,
-      true,
+      false,
       true,
       false,
+      true,
       false,
-      false
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
     ]
   },
   "hash": "70e52de09381a2f07d6dd535310784c56e7e76e5e8ea1d39f6fa4451d1dea43a"

@@ -247,11 +247,10 @@ async fn fetch_member(
     State(app): State<App>,
     token: Token,
 ) -> Result<Json<Member>, RESTError> {
-    // Check if the user is in the channel's guild
-    app.ops()
-        .fetch_member(token.data().user_id(), guild_id)
-        .await?
-        .ok_or(RESTError::Forbidden("Not permitted to view resource.".into()))?;
+    // Check if the requester is in the channel's guild
+    if !app.ops().has_member(guild_id, token.data().user_id()).await? {
+        return Err(RESTError::Forbidden("Not permitted to view resource.".into()));
+    }
 
     let member = app
         .ops()
@@ -320,15 +319,7 @@ async fn create_member(
         .await
         .ok_or(RESTError::NotFound("Guild does not exist or is not available.".into()))?;
 
-    app.ops().create_member(&guild, token.data().user_id()).await?;
-
-    let member =
-        app.ops()
-            .fetch_member(token.data().user_id(), guild_id)
-            .await?
-            .ok_or(RESTError::InternalServerError(
-                "A member should have been created.".into(),
-            ))?;
+    let member = app.ops().create_member(&guild, token.data().user_id()).await?;
 
     // Create payload seperately as it needs read access to gateway
     let gc_payload = GatewayEvent::GuildCreate(GuildCreatePayload::from_guild(&app, guild).await?);
@@ -375,30 +366,29 @@ async fn leave_guild(
         .fetch_guild(guild_id)
         .await
         .ok_or(RESTError::NotFound("Guild does not exist or is not available.".into()))?;
-    let member = app
-        .ops()
-        .fetch_member(token.data().user_id(), guild_id)
-        .await?
-        .ok_or(RESTError::NotFound("Member does not exist or is not available.".into()))?;
+    let member_id = token.data().user_id();
 
-    if member.user().id() == guild.owner_id() {
+    if !app.ops().has_member(guild_id, member_id).await? {
+        return Err(RESTError::NotFound("Member does not exist.".into()));
+    }
+
+    if member_id == guild.owner_id() {
         return Err(RESTError::Forbidden("Owner cannot leave owned guild.".into()));
     }
 
-    app.ops().delete_member(&guild, token.data().user_id()).await?;
+    app.ops().delete_member(&guild, member_id).await?;
 
     // Remove the member from the gateway's sessions
-    app.gateway().remove_member(token.data().user_id(), guild_id);
+    app.gateway().remove_member(member_id, guild_id);
 
     // Send GUILD_REMOVE to the user who left
-    app.gateway()
-        .send_to(member.user().id(), GatewayEvent::GuildRemove(guild));
+    app.gateway().send_to(member_id, GatewayEvent::GuildRemove(guild));
 
     // Dispatch the member remove event
     app.gateway().dispatch(
         GatewayEvent::MemberRemove {
-            id: member.user().id(),
-            guild_id: member.guild_id(),
+            id: member_id,
+            guild_id,
         },
         SendMode::ToGuild(guild_id),
     );

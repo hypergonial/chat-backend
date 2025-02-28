@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use futures::future::join_all;
 use secrecy::Secret;
 use serde::{Deserialize, Serialize};
@@ -50,6 +52,11 @@ pub enum GatewayEvent {
     ChannelCreate(Channel),
     /// A channel was deleted.
     ChannelRemove(Channel),
+    /// A message was acknowledged by another session.
+    MessageAck {
+        channel_id: Snowflake<Channel>,
+        message_id: Snowflake<Message>,
+    },
     /// A user's presence was updated.
     PresenceUpdate {
         user_id: Snowflake<User>,
@@ -61,7 +68,11 @@ pub enum GatewayEvent {
         channel_id: Snowflake<Channel>,
     },
     /// The server is ready to accept messages.
-    Ready { user: User, guilds: Vec<Guild> },
+    Ready {
+        user: User,
+        guilds: Vec<Guild>,
+        read_states: HashMap<Snowflake<Channel>, Snowflake<Message>>,
+    },
     /// A user's data was updated.
     UserUpdate(User),
 }

@@ -1324,12 +1324,19 @@ async fn send_onboarding_payloads(
         .await
         .expect("Failed to fetch guilds during socket connection handling");
 
+    let read_states = app
+        .ops()
+        .fetch_read_states(user.id())
+        .await
+        .expect("Failed to fetch read states during socket connection handling");
+
     // Send READY
     send_serializable(
         &mut *ws_sink.lock().await,
         GatewayEvent::Ready {
             user: user.clone(),
             guilds: guilds.clone(),
+            read_states: read_states.clone(),
         },
     )
     .await?;

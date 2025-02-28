@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use chrono::Utc;
 
 use crate::{
@@ -92,6 +94,98 @@ impl<'a> Ops<'a> {
         );
 
         Ok(())
+    }
+
+    /// Update the read state for a given user in a channel.
+    ///
+    /// ## Arguments
+    ///
+    /// * `user` - The user to update the read state for.
+    /// * `channel` - The channel to update the read state for.
+    /// * `message` - The last read message in the channel.
+    ///
+    /// ## Errors
+    ///
+    /// * [`sqlx::Error`] - If the database query fails.
+    pub async fn update_read_state(
+        &self,
+        user: impl Into<Snowflake<User>>,
+        channel: impl Into<Snowflake<Channel>>,
+        last_message: impl Into<Snowflake<Message>>,
+    ) -> Result<(), sqlx::Error> {
+        let user_id = user.into();
+        let channel_id = channel.into();
+        let message_id = last_message.into();
+
+        sqlx::query!(
+            "INSERT INTO read_states (user_id, channel_id, message_id)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (user_id, channel_id) DO UPDATE
+            SET message_id = $3",
+            user_id as Snowflake<User>,
+            channel_id as Snowflake<Channel>,
+            message_id as Snowflake<Message>,
+        )
+        .execute(self.app.db())
+        .await?;
+
+        Ok(())
+    }
+
+    /// Fetch all read states for a given user.
+    ///
+    /// ## Arguments
+    ///
+    /// * `user` - The user to fetch the read states for.
+    ///
+    /// ## Returns
+    ///
+    /// A map of channel IDs to the last read message in that channel.
+    ///
+    /// ## Errors
+    ///
+    /// * [`sqlx::Error`] - If the database query fails.
+    pub async fn fetch_read_states(
+        &self,
+        user: impl Into<Snowflake<User>>,
+    ) -> Result<HashMap<Snowflake<Channel>, Snowflake<Message>>, sqlx::Error> {
+        let records = sqlx::query!(
+            "SELECT channel_id, message_id
+            FROM read_states
+            WHERE user_id = $1",
+            user.into() as Snowflake<User>
+        )
+        .fetch_all(self.app.db())
+        .await?;
+
+        Ok(records
+            .into_iter()
+            .map(|r| (r.channel_id.into(), r.message_id.into()))
+            .collect())
+    }
+
+    /// Checks if a given channel exists in the database.
+    ///
+    /// ## Arguments
+    ///
+    /// * `channel` - The ID of the channel to check.
+    ///
+    /// ## Returns
+    ///
+    /// `true` if the channel exists, otherwise `false`.
+    ///
+    /// ## Errors
+    ///
+    /// * [`sqlx::Error`] - If the database query fails.
+    pub async fn is_channel_present(&self, channel: impl Into<Snowflake<Channel>>) -> Result<bool, sqlx::Error> {
+        let res = sqlx::query!(
+            "SELECT EXISTS(SELECT 1 FROM channels WHERE id = $1)",
+            channel.into() as Snowflake<Channel>
+        )
+        .fetch_one(self.app.db())
+        .await?;
+
+        Ok(res.exists.unwrap_or(false))
     }
 
     /// Fetch a channel from the database by ID.
@@ -442,6 +536,36 @@ impl<'a> Ops<'a> {
         record.map(Member::from_extended_record).transpose().map_err(Into::into)
     }
 
+    /// Returns whether the user is a member of the guild.
+    ///
+    /// ## Arguments
+    ///
+    /// * `guild` - The ID of the guild.
+    /// * `user` - The ID of the user.
+    ///
+    /// ## Returns
+    ///
+    /// `true` if the user is a member of the guild, otherwise `false`.
+    ///
+    /// ## Errors
+    ///
+    /// * [`sqlx::Error`] - If the database query fails.
+    pub async fn has_member(
+        &self,
+        guild: impl Into<Snowflake<Guild>>,
+        user: impl Into<Snowflake<User>>,
+    ) -> Result<bool, sqlx::Error> {
+        let res = sqlx::query!(
+            "SELECT EXISTS(SELECT 1 FROM members WHERE user_id = $1 AND guild_id = $2)",
+            user.into() as Snowflake<User>,
+            guild.into() as Snowflake<Guild>,
+        )
+        .fetch_one(self.app.db())
+        .await?;
+
+        Ok(res.exists.unwrap_or(false))
+    }
+
     /// Commit the member to the database.
     ///
     /// ## Errors
@@ -753,6 +877,27 @@ impl<'a> Ops<'a> {
         .ok()??;
 
         Some(User::from_record(row))
+    }
+
+    /// Check if a username is taken.
+    ///
+    /// ## Arguments
+    ///
+    /// * `username` - The username to check.
+    ///
+    /// ## Returns
+    ///
+    /// `true` if the username is taken, otherwise `false`.
+    ///
+    /// ## Errors
+    ///
+    /// * [`sqlx::Error`] - If the database query fails.
+    pub async fn is_username_taken(&self, username: &str) -> Result<bool, sqlx::Error> {
+        let res = sqlx::query!("SELECT EXISTS(SELECT 1 FROM users WHERE username = $1)", username)
+            .fetch_one(self.app.db())
+            .await?;
+
+        Ok(res.exists.unwrap_or(false))
     }
 
     /// Fetch all guilds that this user is a member of.
