@@ -119,7 +119,7 @@ impl<'a> Ops<'a> {
             "INSERT INTO read_states (user_id, channel_id, message_id)
             VALUES ($1, $2, $3)
             ON CONFLICT (user_id, channel_id) DO UPDATE
-            SET message_id = $3",
+            SET message_id = GREATEST(read_states.message_id, $3)",
             user_id as Snowflake<User>,
             channel_id as Snowflake<Channel>,
             message_id as Snowflake<Message>,
