@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use chrono::Utc;
 
 use crate::{
@@ -9,7 +7,7 @@ use crate::{
         avatar::{Avatar, AvatarLike},
         channel::{Channel, ChannelLike, ChannelRecord, TextChannel},
         errors::{AppError, BuildError, GatewayError, RESTError},
-        gateway_event::{GatewayEvent, GatewayMessage},
+        gateway_event::{GatewayEvent, GatewayMessage, ReadStateEntry},
         guild::{Guild, GuildRecord},
         member::{ExtendedMemberRecord, Member, MemberRecord, UserLike},
         message::{ExtendedMessageRecord, Message},
@@ -148,11 +146,18 @@ impl<'a> Ops<'a> {
     pub async fn fetch_read_states(
         &self,
         user: impl Into<Snowflake<User>>,
-    ) -> Result<HashMap<Snowflake<Channel>, Snowflake<Message>>, sqlx::Error> {
+    ) -> Result<Vec<ReadStateEntry>, sqlx::Error> {
         let records = sqlx::query!(
-            "SELECT channel_id, message_id
-            FROM read_states
-            WHERE user_id = $1",
+            r#"SELECT r.channel_id, r.message_id, m.id as "last_message_id?"
+            FROM read_states r
+            LEFT JOIN LATERAL (
+                SELECT id
+                FROM messages 
+                WHERE channel_id = r.channel_id 
+                ORDER BY id DESC 
+                LIMIT 1
+            ) m ON true
+            WHERE r.user_id = $1"#,
             user.into() as Snowflake<User>
         )
         .fetch_all(self.app.db())
@@ -160,7 +165,11 @@ impl<'a> Ops<'a> {
 
         Ok(records
             .into_iter()
-            .map(|r| (r.channel_id.into(), r.message_id.into()))
+            .map(|r| ReadStateEntry {
+                channel_id: r.channel_id.into(),
+                last_read_message_id: r.message_id.into(),
+                last_message_id: r.last_message_id.map(Into::into),
+            })
             .collect())
     }
 

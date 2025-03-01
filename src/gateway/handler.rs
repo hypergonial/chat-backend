@@ -37,7 +37,7 @@ use crate::{
     models::{
         auth::Token,
         errors::GatewayError,
-        gateway_event::{GatewayEvent, GatewayMessage, GuildCreatePayload, ReadStateEntry},
+        gateway_event::{GatewayEvent, GatewayMessage, GuildCreatePayload},
         guild::Guild,
         snowflake::Snowflake,
         state::{App, ApplicationState},
@@ -1336,10 +1336,7 @@ async fn send_onboarding_payloads(
         GatewayEvent::Ready {
             user: user.clone(),
             guilds: guilds.clone(),
-            read_states: read_states
-                .into_iter()
-                .map(|(channel_id, message_id)| ReadStateEntry { channel_id, message_id })
-                .collect(),
+            read_states,
         },
     )
     .await?;
