@@ -147,17 +147,22 @@ impl<'a> Ops<'a> {
         &self,
         user: impl Into<Snowflake<User>>,
     ) -> Result<Vec<ReadStateEntry>, sqlx::Error> {
+        // We want to get info on all channels the member can see, so we join the channels with members
+        // to get all channels the member is in, then left join read states & last messages (if they exist) to that.
         let records = sqlx::query!(
-            r#"SELECT r.channel_id, r.message_id, m.id as "last_message_id?"
-            FROM read_states r
+            r#"SELECT c.id AS channel_id,
+            r.message_id AS "last_read_message_id?",
+            m.id AS "last_message_id?"
+            FROM channels c
+            JOIN members mb ON mb.guild_id = c.guild_id AND mb.user_id = $1
+            LEFT JOIN read_states r ON r.channel_id = c.id AND r.user_id = $1
             LEFT JOIN LATERAL (
-                SELECT id
-                FROM messages 
-                WHERE channel_id = r.channel_id 
-                ORDER BY id DESC 
+                SELECT id 
+                FROM messages
+                WHERE channel_id = c.id
+                ORDER BY id DESC
                 LIMIT 1
-            ) m ON true
-            WHERE r.user_id = $1"#,
+            ) m ON true"#,
             user.into() as Snowflake<User>
         )
         .fetch_all(self.app.db())
@@ -167,7 +172,7 @@ impl<'a> Ops<'a> {
             .into_iter()
             .map(|r| ReadStateEntry {
                 channel_id: r.channel_id.into(),
-                last_read_message_id: r.message_id.into(),
+                last_read_message_id: r.last_read_message_id.map(Into::into),
                 last_message_id: r.last_message_id.map(Into::into),
             })
             .collect())

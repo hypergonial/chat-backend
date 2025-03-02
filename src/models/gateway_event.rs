@@ -97,7 +97,7 @@ pub enum GatewayMessage {
 #[derive(Serialize, Debug, Clone)]
 pub struct ReadStateEntry {
     pub channel_id: Snowflake<Channel>,
-    pub last_read_message_id: Snowflake<Message>,
+    pub last_read_message_id: Option<Snowflake<Message>>,
     pub last_message_id: Option<Snowflake<Message>>,
 }
 

@@ -1499,7 +1499,7 @@ async fn handle_connection(app: App, socket: WebSocket) {
     let ws_sink = Arc::new(Mutex::new(ws_sink));
 
     // Send READY and guild creates to user
-    let send_ready = tokio::spawn(send_onboarding_payloads(app.clone(), user.clone(), ws_sink.clone()));
+    let send_onboarding = tokio::spawn(send_onboarding_payloads(app.clone(), user.clone(), ws_sink.clone()));
 
     // The tasks need to be dropped when their joinhandles are dropped by select!
     let send_events = tokio::spawn(send_events(
@@ -1523,7 +1523,7 @@ async fn handle_connection(app: App, socket: WebSocket) {
         _ = handle_heartbeat => { false },
     };
 
-    send_ready.abort();
+    send_onboarding.abort();
 
     // If we're shutting down, don't spam out presence updates
     if is_server_shutting_down {
