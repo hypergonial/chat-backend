@@ -157,6 +157,8 @@ Deletes the message. Dispatches the [MESSAGE_REMOVE](../gateway/events.md#messag
 
 Acknowledges a message. Dispatches the [MESSAGE_ACK](../gateway/events.md#message_ack) gateway event to all sessions of the currently authenticated user.
 
+**Note:** It is not necessary to ack messages you have sent, your read state is updated automatically when sending a message.
+
 ### Errors
 
 | Code | Description |
