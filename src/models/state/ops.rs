@@ -308,6 +308,8 @@ impl<'a> Ops<'a> {
         after: Option<impl Into<Snowflake<Message>>>,
         around: Option<impl Into<Snowflake<Message>>>,
     ) -> Result<Vec<Message>, RESTError> {
+        // TODO: Make this return members for author if possible, instead of users
+
         // Check if more than one of the before/after/around parameters are provided
         if [before.is_some(), after.is_some(), around.is_some()]
             .into_iter()

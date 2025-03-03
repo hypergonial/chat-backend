@@ -166,6 +166,11 @@ async fn create_message(
     let message = message.strip_attachment_contents();
     let reply = Json(message.clone());
 
+    // Update read state for the user
+    app.ops()
+        .update_read_state(token.data().user_id(), channel.id(), message.id())
+        .await?;
+
     app.gateway().dispatch(
         GatewayEvent::MessageCreate(message),
         SendMode::ToGuild(channel.guild_id()),
