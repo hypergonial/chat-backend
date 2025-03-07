@@ -13,10 +13,11 @@ use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode}
 use secrecy::{ExposeSecret, Secret};
 use serde::{Deserialize, Serialize};
 
+use crate::app::App;
+
 use super::{
     errors::{AuthError, RESTError},
     snowflake::Snowflake,
-    state::App,
     user::User,
 };
 

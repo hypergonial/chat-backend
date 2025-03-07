@@ -2,7 +2,7 @@ use std::sync::{Arc, Weak};
 
 use sqlx::{Executor, migrate, postgres::PgPool};
 
-use crate::models::state::ApplicationState;
+use crate::app::ApplicationState;
 
 #[derive(Clone, Debug)]
 pub struct Database {

@@ -1,11 +1,12 @@
 use std::fmt::Debug;
 use std::hash::{DefaultHasher, Hash, Hasher};
 
+use crate::external::s3::{Bucket, S3Service};
+
 use super::{
     data_uri::DataUri,
     errors::{AppError, BuildError},
     guild::Guild,
-    s3::{Bucket, S3Service},
     user::User,
 };
 use bytes::Bytes;

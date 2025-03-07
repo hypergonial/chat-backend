@@ -6,15 +6,15 @@ use derive_builder::Builder;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-use crate::gateway::handler::Gateway;
+use crate::app::Config;
+use crate::gateway::Gateway;
 
 use super::{
     avatar::{Avatar, FullAvatar, PartialAvatar, UserAvatar},
     errors::BuildError,
     omittableoption::OmittableOption,
-    requests::{CreateUser, UpdateUser},
+    request_payloads::{CreateUser, UpdateUser},
     snowflake::Snowflake,
-    state::Config,
 };
 
 static USERNAME_REGEX: LazyLock<Regex> = LazyLock::new(|| {

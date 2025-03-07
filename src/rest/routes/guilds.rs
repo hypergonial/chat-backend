@@ -6,19 +6,18 @@ use axum::{
 };
 use tower_http::limit::RequestBodyLimitLayer;
 
-use crate::models::{gateway_event::GuildCreatePayload, requests::UpdateGuild};
 use crate::{
-    gateway::handler::SendMode,
+    app::App,
+    gateway::SendMode,
     models::{
         auth::Token,
         channel::Channel,
         errors::RESTError,
-        gateway_event::GatewayEvent,
+        gateway_event::{GatewayEvent, GuildCreatePayload},
         guild::Guild,
         member::Member,
-        requests::{CreateChannel, CreateGuild},
+        request_payloads::{CreateChannel, CreateGuild, UpdateGuild},
         snowflake::Snowflake,
-        state::App,
         user::User,
     },
 };

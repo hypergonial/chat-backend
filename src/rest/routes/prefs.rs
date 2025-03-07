@@ -5,8 +5,8 @@ use axum::{
     routing::{get, patch},
 };
 
-use crate::models::{auth::Token, prefs::Prefs};
-use crate::models::{errors::RESTError, requests::UpdatePrefs, state::App};
+use crate::app::App;
+use crate::models::{auth::Token, errors::RESTError, prefs::Prefs, request_payloads::UpdatePrefs};
 
 pub fn get_router() -> Router<App> {
     Router::new()

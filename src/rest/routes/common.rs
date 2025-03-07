@@ -4,7 +4,7 @@ use axum::Router;
 use http::{Method, header};
 use tower_http::cors::{Any, CorsLayer};
 
-use crate::models::state::App;
+use crate::app::App;
 
 use super::channels::get_router as get_channel_router;
 use super::guilds::get_router as get_guild_router;

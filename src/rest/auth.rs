@@ -2,11 +2,14 @@ use argon2::password_hash::SaltString;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use secrecy::{ExposeSecret, Secret};
 
+use crate::app::App;
+
 use crate::models::{
     auth::{Credentials, StoredCredentials},
     errors::AuthError,
+    snowflake::Snowflake,
+    user::User,
 };
-use crate::models::{snowflake::Snowflake, state::App, user::User};
 
 // TODO: Add auth attempts logging and authenticated endpoint to query it.
 

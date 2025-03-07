@@ -2,6 +2,8 @@ use futures::future::join_all;
 use secrecy::Secret;
 use serde::{Deserialize, Serialize};
 
+use crate::app::ApplicationState;
+
 use super::{
     channel::Channel,
     errors::AppError,
@@ -9,7 +11,6 @@ use super::{
     member::Member,
     message::Message,
     snowflake::Snowflake,
-    state::ApplicationState,
     user::{Presence, User},
 };
 

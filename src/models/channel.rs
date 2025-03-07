@@ -1,8 +1,10 @@
 use enum_dispatch::enum_dispatch;
 use serde::{Deserialize, Serialize};
 
+use crate::app::Config;
+
 use super::snowflake::Snowflake;
-use super::{guild::Guild, requests::CreateChannel, state::Config};
+use super::{guild::Guild, request_payloads::CreateChannel};
 
 #[enum_dispatch(Channel)]
 pub trait ChannelLike {

@@ -4,8 +4,6 @@ use super::{
     channel::Channel,
     errors::{AppError, BuildError, RESTError},
     message::{ExtendedMessageRecord, Message},
-    s3::S3Service,
-    state::App,
 };
 use axum::extract::multipart::Field;
 use bytes::Bytes;
@@ -16,6 +14,8 @@ use regex::Regex;
 use serde::Serialize;
 
 use super::snowflake::Snowflake;
+use crate::App;
+use crate::external::S3Service;
 
 static ATTACH_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"attachment-(?P<id>[0-9])").expect("Failed to compile attachment regex"));

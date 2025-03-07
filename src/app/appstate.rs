@@ -11,8 +11,12 @@ use dotenvy::dotenv;
 use secrecy::{ExposeSecret, Secret};
 
 use super::ops::Ops;
-use crate::models::{db::Database, errors::BuildError, s3::S3Service};
-use crate::{gateway::handler::Gateway, models::errors::AppError};
+use crate::models::errors::BuildError;
+use crate::{
+    external::{Database, S3Service},
+    gateway::handler::Gateway,
+    models::errors::AppError,
+};
 
 pub type App = Arc<ApplicationState>;
 pub type S3Client = Client;

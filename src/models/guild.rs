@@ -1,11 +1,12 @@
 use serde::Serialize;
 
+use crate::app::Config;
+
 use super::{
     avatar::{Avatar, FullAvatar, GuildAvatar, PartialAvatar},
     errors::AppError,
-    requests::{CreateGuild, UpdateGuild},
+    request_payloads::{CreateGuild, UpdateGuild},
     snowflake::Snowflake,
-    state::Config,
     user::User,
 };
 

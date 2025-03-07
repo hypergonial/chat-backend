@@ -2,25 +2,23 @@ use chrono::Utc;
 use derive_builder::Builder;
 
 use crate::{
+    app::Config,
+    external::{Database, S3Service},
     gateway::handler::{ConnectionId, Gateway, SendMode},
     models::{
         attachment::{Attachment, AttachmentLike, FullAttachment},
         avatar::{Avatar, AvatarLike},
         channel::{Channel, ChannelLike, ChannelRecord, TextChannel},
-        db::Database,
         errors::{AppError, BuildError, GatewayError, RESTError},
         gateway_event::{GatewayEvent, GatewayMessage, ReadStateEntry},
         guild::{Guild, GuildRecord},
         member::{ExtendedMemberRecord, Member, MemberRecord, UserLike},
         message::{ExtendedMessageRecord, Message},
-        requests::{CreateGuild, CreateUser, UpdateGuild, UpdateMessage, UpdateUser},
-        s3::S3Service,
+        request_payloads::{CreateGuild, CreateUser, UpdateGuild, UpdateMessage, UpdateUser},
         snowflake::Snowflake,
         user::{Presence, User, UserRecord},
     },
 };
-
-use super::Config;
 
 /// Contains all operations that affect or rely on state.
 #[derive(Builder)]

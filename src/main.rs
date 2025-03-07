@@ -1,14 +1,16 @@
 #![allow(async_fn_in_trait)]
 
+pub mod app;
+pub mod external;
 pub mod gateway;
 pub mod models;
 pub mod rest;
 pub mod utils;
 
+use app::{App, ApplicationState};
 use axum::{Router, ServiceExt, extract::Request};
 use color_eyre::eyre::Result;
 use mimalloc::MiMalloc;
-use models::state::App;
 use tokio::signal::ctrl_c;
 use tower::Layer;
 use tower_http::{normalize_path::NormalizePathLayer, trace::TraceLayer};
@@ -18,8 +20,6 @@ use tracing::level_filters::LevelFilter;
 
 #[cfg(unix)]
 use tokio::signal::unix::{SignalKind, signal};
-
-use crate::models::state::ApplicationState;
 
 // See: https://github.com/microsoft/mimalloc
 #[global_allocator]

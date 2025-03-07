@@ -7,7 +7,8 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    gateway::handler::SendMode,
+    app::App,
+    gateway::SendMode,
     models::{
         auth::Token,
         channel::{Channel, ChannelLike},
@@ -15,9 +16,8 @@ use crate::{
         gateway_event::GatewayEvent,
         member::UserLike,
         message::Message,
-        requests::UpdateMessage,
+        request_payloads::UpdateMessage,
         snowflake::Snowflake,
-        state::App,
     },
 };
 

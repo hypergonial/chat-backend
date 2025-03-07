@@ -1,6 +1,8 @@
 use secrecy::Secret;
 use serde::Deserialize;
 
+use crate::app::ApplicationState;
+
 use super::{
     channel::Channel,
     data_uri::DataUri,
@@ -11,7 +13,6 @@ use super::{
     omittableoption::OmittableOption,
     prefs::{Layout, PrefFlags},
     snowflake::Snowflake,
-    state::ApplicationState,
     user::User,
 };
 

@@ -34,13 +34,13 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use uuid::Uuid;
 
 use crate::{
+    app::{App, ApplicationState},
     models::{
         auth::Token,
         errors::GatewayError,
         gateway_event::{GatewayEvent, GatewayMessage, GuildCreatePayload},
         guild::Guild,
         snowflake::Snowflake,
-        state::{App, ApplicationState},
         user::{Presence, User},
     },
     utils::join_handle::{AbortingJoinHandle, JoinHandleExt},

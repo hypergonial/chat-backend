@@ -1,7 +1,9 @@
 use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
 
-use super::{requests::UpdatePrefs, snowflake::Snowflake, state::App, user::User};
+use crate::app::App;
+
+use super::{request_payloads::UpdatePrefs, snowflake::Snowflake, user::User};
 
 bitflags! {
     /// Boolean flags for user preferences

@@ -13,7 +13,7 @@ use snowflake::SnowflakeIdGenerator;
 use sqlx::{Decode, Encode, postgres::PgHasArrayType};
 use std::time::SystemTime;
 
-use super::state::Config;
+use crate::app::Config;
 
 // Custom epoch of 2023-01-01T00:00:00Z in miliseconds
 pub const EPOCH: i64 = 1_672_531_200_000;

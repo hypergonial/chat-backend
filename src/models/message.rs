@@ -4,15 +4,16 @@ use derive_builder::Builder;
 use serde::Serialize;
 use slice_group_by::GroupBy;
 
+use crate::app::Config;
+
 use super::{
     attachment::{Attachment, AttachmentLike, FullAttachment},
     avatar::{Avatar, PartialAvatar, UserAvatar},
     channel::Channel,
     errors::{BuildError, RESTError},
     member::UserLike,
-    requests::{CreateMessage, UpdateMessage},
+    request_payloads::{CreateMessage, UpdateMessage},
     snowflake::Snowflake,
-    state::Config,
     user::User,
 };
 

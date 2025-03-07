@@ -5,23 +5,23 @@ use axum::{
     routing::{get, patch, post},
 };
 use secrecy::ExposeSecret;
-use serde_json::json;
+use serde_json::{Value, json};
 use tower_http::limit::RequestBodyLimitLayer;
 
-use crate::models::{errors::RESTError, requests::UpdateUser};
-use crate::rest::auth::{generate_hash, validate_credentials};
 use crate::{
-    gateway::handler::SendMode,
+    app::App,
+    gateway::SendMode,
     models::{
         auth::{Credentials, StoredCredentials, Token},
+        errors::RESTError,
         gateway_event::GatewayEvent,
         guild::Guild,
-        requests::CreateUser,
-        state::App,
+        request_payloads::CreateUser,
+        request_payloads::UpdateUser,
         user::{Presence, User},
     },
+    rest::auth::{generate_hash, validate_credentials},
 };
-use serde_json::Value;
 
 pub fn get_router() -> Router<App> {
     Router::new()

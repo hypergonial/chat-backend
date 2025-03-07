@@ -10,7 +10,6 @@ use bytes::Bytes;
 use http::StatusCode;
 use mime::Mime;
 use serde::de::DeserializeOwned;
-
 use serde_json::json;
 use thiserror::Error;
 

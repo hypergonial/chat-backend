@@ -10,8 +10,9 @@ use aws_sdk_s3::{
 use bytes::{Bytes, BytesMut};
 use mime::Mime;
 
-use super::{
-    channel::Channel, errors::AppError, guild::Guild, message::Message, snowflake::Snowflake, state::ApplicationState,
+use crate::{
+    app::ApplicationState, models::channel::Channel, models::errors::AppError, models::guild::Guild,
+    models::message::Message, models::snowflake::Snowflake,
 };
 
 pub type S3Client = Client;
@@ -333,6 +334,13 @@ impl<'a> Bucket<'a> {
 
         Ok(())
     }
+
+    // TODO: Maybe use S3 lifecycles for this to mark objects for deletion instead?
+    // The idea is to use a batch job that tags objects for deletion and then the lifecycle policy
+    // will delete them after a certain period of time.
+    // See: https://medium.com/@dnorth98/using-s3-batch-to-tag-data-for-removal-a569fef7ac0
+    // Note to self: It seems odd that the official SDK is missing CreateJob, but it's in the API.
+    // https://docs.aws.amazon.com/AmazonS3/latest/API/API_control_CreateJob.html
 
     /// Delete multiple objects from this bucket.
     ///
