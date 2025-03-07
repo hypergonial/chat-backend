@@ -31,12 +31,12 @@ const ALLOW_ALL_DOWNLOADS_POLICY: &str = r#"{
 
 /// All S3 buckets used by the application.
 #[derive(Debug, Clone)]
-pub struct Buckets {
+pub struct S3Service {
     app: Weak<ApplicationState>,
     client: S3Client,
 }
 
-impl Buckets {
+impl S3Service {
     /// Create all buckets from the given config.
     pub const fn new(client: S3Client) -> Self {
         Self {
@@ -201,11 +201,11 @@ impl Buckets {
 #[derive(Clone, Debug)]
 pub struct Bucket<'a> {
     name: &'static str,
-    buckets: &'a Buckets,
+    buckets: &'a S3Service,
 }
 
 impl<'a> Bucket<'a> {
-    pub const fn new(buckets: &'a Buckets, name: &'static str) -> Self {
+    pub const fn new(buckets: &'a S3Service, name: &'static str) -> Self {
         Self { name, buckets }
     }
 

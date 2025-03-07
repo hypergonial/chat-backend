@@ -69,7 +69,7 @@ async fn main() -> Result<()> {
     tracing::subscriber::set_global_default(subscriber).expect("Failed to set subscriber");
 
     // Initialize the application state
-    let state = ApplicationState::new_shared().await?;
+    let state = ApplicationState::from_env().await?;
 
     let router = Router::new()
         .nest("/gateway/v1", gateway::handler::get_router())

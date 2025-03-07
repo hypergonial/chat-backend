@@ -21,6 +21,18 @@ impl Database {
         }
     }
 
+    /// Creates a new database instance with an already connected pool
+    ///
+    /// ## Arguments
+    ///
+    /// * `pool` - The connected database pool
+    pub const fn from_pool(pool: PgPool) -> Self {
+        Self {
+            pool: Some(pool),
+            app: Weak::new(),
+        }
+    }
+
     pub fn bind_to(&mut self, app: Weak<ApplicationState>) {
         self.app = app;
     }
@@ -49,7 +61,7 @@ impl Database {
         self.pool.as_ref().is_some_and(|pool| !pool.is_closed())
     }
 
-    /// Connects to the database
+    /// Connects to the database. Calls to a connected database are ignored.
     ///
     /// ## Arguments
     ///
@@ -59,6 +71,12 @@ impl Database {
     ///
     /// * [`sqlx::Error`] - If the database connection fails
     pub async fn connect(&mut self, url: &str) -> Result<(), sqlx::Error> {
+        if let Some(pool) = &self.pool {
+            if !pool.is_closed() {
+                return Ok(());
+            }
+        }
+
         self.pool = Some(PgPool::connect(url).await?);
         migrate!("./migrations").run(self.pool()).await?;
         Ok(())

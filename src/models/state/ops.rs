@@ -1,33 +1,68 @@
 use chrono::Utc;
+use derive_builder::Builder;
 
 use crate::{
-    gateway::handler::{ConnectionId, SendMode},
+    gateway::handler::{ConnectionId, Gateway, SendMode},
     models::{
         attachment::{Attachment, AttachmentLike, FullAttachment},
         avatar::{Avatar, AvatarLike},
         channel::{Channel, ChannelLike, ChannelRecord, TextChannel},
+        db::Database,
         errors::{AppError, BuildError, GatewayError, RESTError},
         gateway_event::{GatewayEvent, GatewayMessage, ReadStateEntry},
         guild::{Guild, GuildRecord},
         member::{ExtendedMemberRecord, Member, MemberRecord, UserLike},
         message::{ExtendedMessageRecord, Message},
         requests::{CreateGuild, CreateUser, UpdateGuild, UpdateMessage, UpdateUser},
+        s3::S3Service,
         snowflake::Snowflake,
         user::{Presence, User, UserRecord},
     },
 };
 
-use super::ApplicationState;
+use super::Config;
 
-/// Contains all the application state operations.
+/// Contains all operations that affect or rely on state.
+#[derive(Builder)]
+#[builder(setter(into), build_fn(error = "BuildError"))]
 pub struct Ops<'a> {
-    app: &'a ApplicationState,
+    /// The database connection.
+    db: &'a Database,
+    /// The main application configuration.
+    config: &'a Config,
+    /// The S3 service to use for file storage.
+    /// If not provided, file storage operations will be skipped.
+    #[builder(default)]
+    s3: Option<&'a S3Service>,
+    /// The gateway connection to use for sending and receiving events.
+    /// If not provided, gateway operations will be skipped.
+    #[builder(default)]
+    gateway: Option<&'a Gateway>,
 }
 
 impl<'a> Ops<'a> {
-    /// Create a new application state operations.
-    pub const fn new(app: &'a ApplicationState) -> Self {
-        Self { app }
+    /// Create a new [`Ops`].
+    pub const fn new(
+        db: &'a Database,
+        config: &'a Config,
+        s3: Option<&'a S3Service>,
+        gateway: Option<&'a Gateway>,
+    ) -> Self {
+        Self {
+            db,
+            config,
+            s3,
+            gateway,
+        }
+    }
+
+    /// Create a new builder to construct an [`Ops`].
+    pub fn builder() -> OpsBuilder<'a> {
+        OpsBuilder::default()
+    }
+
+    async fn s3_run(&self, f: impl AsyncFnOnce(&S3Service) -> Result<(), AppError>) -> Result<(), AppError> {
+        if let Some(s3) = self.s3 { f(s3).await } else { Ok(()) }
     }
 
     /// Called when a message is received from a gateway connection.
@@ -44,9 +79,9 @@ impl<'a> Ops<'a> {
         };
 
         if let Err(e) = res {
-            self.app
-                .gateway()
-                .close_session(connection_id, e.close_code(), e.to_string());
+            if let Some(g) = self.gateway {
+                g.close_session(connection_id, e.close_code(), e.to_string());
+            }
         }
     }
 
@@ -60,7 +95,7 @@ impl<'a> Ops<'a> {
     /// ## Errors
     ///
     /// * [`AppError`] - If the database query fails.
-    pub async fn trigger_typing(
+    async fn trigger_typing(
         &self,
         channel: impl Into<Snowflake<Channel>>,
         user: impl Into<Snowflake<User>>,
@@ -76,7 +111,7 @@ impl<'a> Ops<'a> {
             channel_id as Snowflake<Channel>,
             user_id as Snowflake<User>,
         )
-        .fetch_optional(self.app.db())
+        .fetch_optional(self.db)
         .await?;
 
         let record = record.ok_or_else(|| AppError::NotFound("Channel not found".into()))?;
@@ -86,10 +121,12 @@ impl<'a> Ops<'a> {
 
         let channel_guild_id: Snowflake<Guild> = record.channel_guild_id.into();
 
-        self.app.gateway().dispatch(
-            GatewayEvent::TypingStart { user_id, channel_id },
-            SendMode::ToGuild(channel_guild_id),
-        );
+        if let Some(g) = self.gateway {
+            g.dispatch(
+                GatewayEvent::TypingStart { user_id, channel_id },
+                SendMode::ToGuild(channel_guild_id),
+            );
+        }
 
         Ok(())
     }
@@ -124,7 +161,7 @@ impl<'a> Ops<'a> {
             channel_id as Snowflake<Channel>,
             message_id as Snowflake<Message>,
         )
-        .execute(self.app.db())
+        .execute(self.db)
         .await?;
 
         Ok(())
@@ -165,7 +202,7 @@ impl<'a> Ops<'a> {
             ) m ON true"#,
             user.into() as Snowflake<User>
         )
-        .fetch_all(self.app.db())
+        .fetch_all(self.db)
         .await?;
 
         Ok(records
@@ -196,7 +233,7 @@ impl<'a> Ops<'a> {
             "SELECT EXISTS(SELECT 1 FROM channels WHERE id = $1)",
             channel.into() as Snowflake<Channel>
         )
-        .fetch_one(self.app.db())
+        .fetch_one(self.db)
         .await?;
 
         Ok(res.exists.unwrap_or(false))
@@ -217,7 +254,7 @@ impl<'a> Ops<'a> {
             "SELECT * FROM channels WHERE id = $1",
             id.into() as Snowflake<Channel>
         )
-        .fetch_optional(self.app.db())
+        .fetch_optional(self.db)
         .await
         .ok()??;
 
@@ -239,7 +276,7 @@ impl<'a> Ops<'a> {
             channel.name(),
             channel.channel_type(),
         )
-        .fetch_one(self.app.db())
+        .fetch_one(self.db)
         .await
         .map(Channel::from_record)
     }
@@ -255,7 +292,7 @@ impl<'a> Ops<'a> {
             channel.id() as Snowflake<Channel>,
             channel.name()
         )
-        .execute(self.app.db())
+        .execute(self.db)
         .await?;
 
         Ok(())
@@ -274,10 +311,12 @@ impl<'a> Ops<'a> {
     pub async fn delete_channel(&self, channel: impl Into<Snowflake<Channel>>) -> Result<(), AppError> {
         let channel_id: Snowflake<Channel> = channel.into();
 
-        self.app.s3().remove_all_for_channel(channel_id).await?;
+        // FIXME: Error not handled
+        self.s3_run(async |s3| s3.remove_all_for_channel(channel_id).await)
+            .await?;
 
         sqlx::query!("DELETE FROM channels WHERE id = $1", channel_id as Snowflake<Channel>)
-            .execute(self.app.db())
+            .execute(self.db)
             .await?;
 
         Ok(())
@@ -353,7 +392,7 @@ impl<'a> Ops<'a> {
                 after.map(Into::into),
                 i64::from(limit.unwrap_or(50).min(100))
             )
-            .fetch_all(self.app.db())
+            .fetch_all(self.db)
             .await?
         } else {
             // Ensure the final message count is always the limit (+1 for the anchor message)
@@ -387,7 +426,7 @@ impl<'a> Ops<'a> {
                 before_limit,
                 after_limit
             )
-            .fetch_all(self.app.db())
+            .fetch_all(self.db)
             .await?
         };
 
@@ -405,7 +444,7 @@ impl<'a> Ops<'a> {
             "SELECT id, name, owner_id, avatar_hash FROM guilds WHERE id = $1",
             guild.into() as Snowflake<Guild>,
         )
-        .fetch_optional(self.app.db())
+        .fetch_optional(self.db)
         .await
         .ok()??;
 
@@ -439,7 +478,7 @@ impl<'a> Ops<'a> {
             WHERE members.guild_id = $1",
             guild.into() as Snowflake<Guild>
         )
-        .fetch_all(self.app.db())
+        .fetch_all(self.db)
         .await?;
 
         records
@@ -460,7 +499,7 @@ impl<'a> Ops<'a> {
             "SELECT * FROM channels WHERE guild_id = $1",
             guild.into() as Snowflake<Guild>
         )
-        .fetch_all(self.app.db())
+        .fetch_all(self.db)
         .await?;
 
         Ok(records.into_iter().map(Channel::from_record).collect())
@@ -488,7 +527,7 @@ impl<'a> Ops<'a> {
             guild.into() as Snowflake<Guild>,
             Utc::now().timestamp(),
         )
-        .fetch_one(self.app.db())
+        .fetch_one(self.db)
         .await?;
         Ok(Member::from_record(user, record))
     }
@@ -512,7 +551,7 @@ impl<'a> Ops<'a> {
             user_id as Snowflake<User>,
             guild.id() as Snowflake<Guild>,
         )
-        .execute(self.app.db())
+        .execute(self.db)
         .await?;
         Ok(())
     }
@@ -546,7 +585,7 @@ impl<'a> Ops<'a> {
             user.into() as Snowflake<User>,
             guild.into() as Snowflake<Guild>,
         )
-        .fetch_optional(self.app.db())
+        .fetch_optional(self.db)
         .await?;
 
         record.map(Member::from_extended_record).transpose().map_err(Into::into)
@@ -576,7 +615,7 @@ impl<'a> Ops<'a> {
             user.into() as Snowflake<User>,
             guild.into() as Snowflake<Guild>,
         )
-        .fetch_one(self.app.db())
+        .fetch_one(self.db)
         .await?;
 
         Ok(res.exists.unwrap_or(false))
@@ -598,7 +637,7 @@ impl<'a> Ops<'a> {
             member.nickname().as_ref(),
             member.joined_at()
         )
-        .execute(self.app.db())
+        .execute(self.db)
         .await?;
 
         //self.app.ops().update_user(member.user()).await?;
@@ -624,7 +663,7 @@ impl<'a> Ops<'a> {
         payload: CreateGuild,
         owner: impl Into<Snowflake<User>>,
     ) -> Result<(Guild, Channel, Member), sqlx::Error> {
-        let guild = Guild::from_payload(&self.app.config, payload, owner);
+        let guild = Guild::from_payload(self.config, payload, owner);
         sqlx::query!(
             "INSERT INTO guilds (id, name, owner_id)
             VALUES ($1, $2, $3)",
@@ -632,13 +671,13 @@ impl<'a> Ops<'a> {
             guild.name(),
             guild.owner_id() as Snowflake<User>,
         )
-        .execute(self.app.db())
+        .execute(self.db)
         .await?;
 
         let member = self.create_member(&guild, guild.owner_id()).await?;
 
         let general = TextChannel::new(guild.id().cast(), &guild, "general".to_string()).into();
-        self.app.ops().create_channel(&general).await?;
+        self.create_channel(&general).await?;
         Ok((guild, general, member))
     }
 
@@ -657,7 +696,9 @@ impl<'a> Ops<'a> {
 
         if needs_s3_update {
             match guild.avatar() {
-                Some(Avatar::Full(f)) => f.upload(self.app.s3()).await?,
+                Some(Avatar::Full(f)) => {
+                    self.s3_run(async |s3| f.upload(s3).await).await?;
+                }
                 Some(Avatar::Partial(_)) => {
                     Err(BuildError::IllegalState("Cannot upload partial avatar".into()))?;
                 }
@@ -665,7 +706,7 @@ impl<'a> Ops<'a> {
             }
 
             if let Some(a) = old_guild.avatar() {
-                a.delete(self.app.s3()).await?;
+                self.s3_run(async |s3| a.delete(s3).await).await?;
             }
         }
 
@@ -679,7 +720,7 @@ impl<'a> Ops<'a> {
             guild.owner_id() as Snowflake<User>,
             guild.avatar().map(AvatarLike::avatar_hash),
         )
-        .fetch_one(self.app.db())
+        .fetch_one(self.db)
         .await?;
         Ok(Guild::from_record(record))
     }
@@ -693,10 +734,10 @@ impl<'a> Ops<'a> {
     pub async fn delete_guild(&self, guild: impl Into<Snowflake<Guild>>) -> Result<(), AppError> {
         let guild_id: Snowflake<Guild> = guild.into();
 
-        self.app.s3().remove_all_for_guild(guild_id).await?;
+        self.s3_run(async |s3| s3.remove_all_for_guild(guild_id).await).await?;
 
         sqlx::query!("DELETE FROM guilds WHERE id = $1", guild_id as Snowflake<Guild>)
-            .execute(self.app.db())
+            .execute(self.db)
             .await?;
         Ok(())
     }
@@ -727,7 +768,7 @@ impl<'a> Ops<'a> {
             WHERE messages.id = $1",
             message.into() as Snowflake<Message>
         )
-        .fetch_all(self.app.db())
+        .fetch_all(self.db)
         .await?;
 
         Ok(Message::from_records(&records)?.pop())
@@ -753,7 +794,7 @@ impl<'a> Ops<'a> {
             message.content(),
             message.edited(),
         )
-        .execute(self.app.db())
+        .execute(self.db)
         .await?;
 
         for attachment in message.attachments() {
@@ -815,10 +856,11 @@ impl<'a> Ops<'a> {
         let message_id = message.into();
 
         sqlx::query!("DELETE FROM messages WHERE id = $1", message_id as Snowflake<Message>)
-            .execute(self.app.db())
+            .execute(self.db)
             .await?;
 
-        self.app.s3().remove_all_for_message(channel, message_id).await?;
+        self.s3_run(async |s3| s3.remove_all_for_message(channel, message_id).await)
+            .await?;
 
         Ok(())
     }
@@ -840,7 +882,7 @@ impl<'a> Ops<'a> {
             WHERE id = $1",
             user.into() as Snowflake<User>
         )
-        .fetch_optional(self.app.db())
+        .fetch_optional(self.db)
         .await
         .ok()??;
 
@@ -863,7 +905,7 @@ impl<'a> Ops<'a> {
             WHERE id = $1",
             user.into() as Snowflake<User>
         )
-        .fetch_optional(self.app.db())
+        .fetch_optional(self.db)
         .await
         .ok()??;
 
@@ -888,7 +930,7 @@ impl<'a> Ops<'a> {
             LIMIT 1",
             username
         )
-        .fetch_optional(self.app.db())
+        .fetch_optional(self.db)
         .await
         .ok()??;
 
@@ -910,7 +952,7 @@ impl<'a> Ops<'a> {
     /// * [`sqlx::Error`] - If the database query fails.
     pub async fn is_username_taken(&self, username: &str) -> Result<bool, sqlx::Error> {
         let res = sqlx::query!("SELECT EXISTS(SELECT 1 FROM users WHERE username = $1)", username)
-            .fetch_one(self.app.db())
+            .fetch_one(self.db)
             .await?;
 
         Ok(res.exists.unwrap_or(false))
@@ -930,7 +972,7 @@ impl<'a> Ops<'a> {
             WHERE members.user_id = $1",
             user.into() as Snowflake<User>
         )
-        .fetch_all(self.app.db())
+        .fetch_all(self.db)
         .await?;
 
         Ok(records.into_iter().map(Guild::from_record).collect())
@@ -956,7 +998,7 @@ impl<'a> Ops<'a> {
             WHERE user_id = $1",
             user.into() as Snowflake<User>
         )
-        .fetch_all(self.app.db())
+        .fetch_all(self.db)
         .await?;
 
         Ok(records.into_iter().map(|r| r.guild_id.into()).collect())
@@ -968,7 +1010,7 @@ impl<'a> Ops<'a> {
     ///
     /// * [`sqlx::Error`] - If the database query fails.
     pub async fn create_user(&self, payload: CreateUser) -> Result<User, AppError> {
-        let user = User::from_payload(&self.app.config, &payload)?;
+        let user = User::from_payload(self.config, &payload)?;
 
         sqlx::query!(
             "INSERT INTO users (id, username)
@@ -976,7 +1018,7 @@ impl<'a> Ops<'a> {
             user.id() as Snowflake<User>,
             payload.username,
         )
-        .execute(self.app.db())
+        .execute(self.db)
         .await?;
 
         Ok(user)
@@ -1015,7 +1057,7 @@ impl<'a> Ops<'a> {
 
         if needs_s3_update {
             match user.avatar() {
-                Some(Avatar::Full(f)) => f.upload(self.app.s3()).await?,
+                Some(Avatar::Full(f)) => self.s3_run(async |s3| f.upload(s3).await).await?,
                 Some(Avatar::Partial(_)) => {
                     return Err(BuildError::IllegalState("Cannot upload partial avatar".into()).into());
                 }
@@ -1023,7 +1065,7 @@ impl<'a> Ops<'a> {
             }
 
             if let Some(a) = old_user.avatar() {
-                a.delete(self.app.s3()).await?;
+                self.s3_run(async |s3| a.delete(s3).await).await?;
             }
         }
 
@@ -1037,7 +1079,7 @@ impl<'a> Ops<'a> {
             *user.last_presence() as i16,
             user.avatar().map(AvatarLike::avatar_hash),
         )
-        .fetch_one(self.app.db())
+        .fetch_one(self.db)
         .await?;
         Ok(User::from_record(record))
     }
@@ -1048,7 +1090,7 @@ impl<'a> Ops<'a> {
     ///
     /// * [`AppError::S3`] - If the S3 request fails.
     pub async fn create_attachment(&self, attachment: &FullAttachment) -> Result<(), AppError> {
-        attachment.upload(self.app.s3()).await?;
+        self.s3_run(async |s3| attachment.upload(s3).await).await?;
 
         sqlx::query!(
             "INSERT INTO attachments (id, filename, message_id, channel_id, content_type)
@@ -1061,7 +1103,7 @@ impl<'a> Ops<'a> {
             attachment.channel_id() as Snowflake<Channel>,
             attachment.mime().to_string(),
         )
-        .execute(self.app.db())
+        .execute(self.db)
         .await?;
 
         Ok(())

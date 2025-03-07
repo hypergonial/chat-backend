@@ -2,10 +2,10 @@ use std::fmt::Debug;
 use std::hash::{DefaultHasher, Hash, Hasher};
 
 use super::{
-    bucket::{Bucket, Buckets},
     data_uri::DataUri,
     errors::{AppError, BuildError},
     guild::Guild,
+    s3::{Bucket, S3Service},
     user::User,
 };
 use bytes::Bytes;
@@ -85,7 +85,7 @@ pub trait AvatarLike<K: AvatarKind> {
     }
 
     /// The bucket this avatar is stored in S3.
-    fn bucket<'a>(&self, s3: &'a Buckets) -> Bucket<'a> {
+    fn bucket<'a>(&self, s3: &'a S3Service) -> Bucket<'a> {
         s3.get_bucket(self.kind().bucket())
     }
 
@@ -105,7 +105,7 @@ pub trait AvatarLike<K: AvatarKind> {
     /// ## Errors
     ///
     /// * [`AppError::S3`] - If the S3 request fails.
-    async fn delete(&self, s3: &Buckets) -> Result<(), AppError> {
+    async fn delete(&self, s3: &S3Service) -> Result<(), AppError> {
         self.bucket(s3).delete_object(self.s3_key()).await
     }
 }
@@ -200,7 +200,7 @@ impl<K: AvatarKind> FullAvatar<K> {
     /// ## Errors
     ///
     /// * [`AppError::S3`] - If the S3 request fails.
-    pub async fn upload(&self, s3: &Buckets) -> Result<(), AppError> {
+    pub async fn upload(&self, s3: &S3Service) -> Result<(), AppError> {
         self.bucket(s3)
             .put_object(self.s3_key(), self.content.clone(), self.mime())
             .await
@@ -211,7 +211,7 @@ impl<K: AvatarKind> FullAvatar<K> {
     /// ## Errors
     ///
     /// * [`AppError::S3`] - If the S3 request fails.
-    pub async fn download(&mut self, s3: &Buckets) -> Result<(), AppError> {
+    pub async fn download(&mut self, s3: &S3Service) -> Result<(), AppError> {
         self.content = self.bucket(s3).get_object(self.s3_key()).await?;
         Ok(())
     }
@@ -285,7 +285,7 @@ impl<K: AvatarKind> PartialAvatar<K> {
     /// ## Errors
     ///
     /// * [`AppError::S3`] - If the S3 request fails.
-    pub async fn download(self, buckets: &Buckets) -> Result<FullAvatar<K>, AppError> {
+    pub async fn download(self, buckets: &S3Service) -> Result<FullAvatar<K>, AppError> {
         let mime = self.mime().clone();
         let mut attachment = FullAvatar::builder()
             .avatar_hash(self.avatar_hash)

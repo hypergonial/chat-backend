@@ -11,7 +11,7 @@ use dotenvy::dotenv;
 use secrecy::{ExposeSecret, Secret};
 
 use super::ops::Ops;
-use crate::models::{bucket::Buckets, db::Database, errors::BuildError};
+use crate::models::{db::Database, errors::BuildError, s3::S3Service};
 use crate::{gateway::handler::Gateway, models::errors::AppError};
 
 pub type App = Arc<ApplicationState>;
@@ -22,11 +22,11 @@ pub struct ApplicationState {
     db: Database,
     gateway: Gateway,
     pub config: Config,
-    s3: Buckets,
+    s3: Option<S3Service>,
 }
 
 impl ApplicationState {
-    /// Create a new application state.
+    /// Create a new application state from environment variables.
     ///
     /// ## Errors
     ///
@@ -35,12 +35,12 @@ impl ApplicationState {
     /// ## Returns
     ///
     /// A new application state wrapped in an `Arc`.
-    pub async fn new_shared() -> Result<Arc<Self>, AppError> {
+    pub async fn from_env() -> Result<Arc<Self>, AppError> {
         let config = Config::from_env();
 
         let s3creds = S3Creds::new(
-            config.minio_access_key().expose_secret(),
-            config.minio_secret_key().expose_secret(),
+            config.s3_access_key().expose_secret(),
+            config.s3_secret_key().expose_secret(),
             None,
             None,
             "chat",
@@ -48,26 +48,28 @@ impl ApplicationState {
 
         let s3conf = S3Config::builder()
             .region(Region::new("vault"))
-            .endpoint_url(config.minio_url())
+            .endpoint_url(config.s3_url())
             .credentials_provider(s3creds)
             .force_path_style(true) // MinIO does not support virtual hosts
             .behavior_version(BehaviorVersion::v2024_03_28())
             .build();
 
-        let buckets = Buckets::new(Client::from_conf(s3conf));
+        let s3 = S3Service::new(Client::from_conf(s3conf));
 
         let mut state = Self {
             db: Database::new(),
             gateway: Gateway::new(),
             config,
-            s3: buckets,
+            s3: Some(s3),
         };
 
         state.init().await?;
 
         Ok(Arc::new_cyclic(|w| {
             state.db.bind_to(w.clone());
-            state.s3.bind_to(w.clone());
+            if let Some(s3) = &mut state.s3 {
+                s3.bind_to(w.clone());
+            }
             state.gateway.bind_to(w.clone());
             state.gateway.start();
             state
@@ -83,11 +85,11 @@ impl ApplicationState {
     /// ## Returns
     ///
     /// A new application state wrapped in an `Arc`.
-    pub async fn new_from_components(
+    pub async fn from_components(
         db: Database,
         gateway: Gateway,
         config: Config,
-        s3: Buckets,
+        s3: Option<S3Service>,
     ) -> Result<Arc<Self>, AppError> {
         let mut state = Self {
             db,
@@ -100,7 +102,9 @@ impl ApplicationState {
 
         let shared_state = Arc::new_cyclic(|w| {
             state.db.bind_to(w.clone());
-            state.s3.bind_to(w.clone());
+            if let Some(s3) = &mut state.s3 {
+                s3.bind_to(w.clone());
+            }
             state.gateway.bind_to(w.clone());
             state.gateway.start();
             state
@@ -116,7 +120,9 @@ impl ApplicationState {
     /// * [`sqlx::Error`] - If the database connection fails.
     async fn init(&mut self) -> Result<(), AppError> {
         self.db.connect(self.config.database_url().expose_secret()).await?;
-        self.s3.create_buckets().await?;
+        if let Some(s3) = self.s3.as_mut() {
+            s3.create_buckets().await?;
+        }
         Ok(())
     }
 
@@ -128,8 +134,8 @@ impl ApplicationState {
 
     /// The S3 client instance of the application.
     #[inline]
-    pub const fn s3(&self) -> &Buckets {
-        &self.s3
+    pub const fn s3(&self) -> Option<&S3Service> {
+        self.s3.as_ref()
     }
 
     /// The database instance of the application.
@@ -146,7 +152,7 @@ impl ApplicationState {
 
     #[inline]
     pub const fn ops(&self) -> Ops {
-        Ops::new(self)
+        Ops::new(&self.db, &self.config, self.s3.as_ref(), Some(&self.gateway))
     }
 }
 
@@ -155,9 +161,9 @@ impl ApplicationState {
 #[builder(setter(into), build_fn(error = "BuildError"))]
 pub struct Config {
     database_url: Secret<String>,
-    minio_url: String,
-    minio_access_key: Secret<String>,
-    minio_secret_key: Secret<String>,
+    s3_url: String,
+    s3_access_key: Secret<String>,
+    s3_secret_key: Secret<String>,
     listen_addr: SocketAddr,
     machine_id: i32,
     process_id: i32,
@@ -176,18 +182,18 @@ impl Config {
     }
 
     /// The URL for the `MinIO` server, an S3-compatible storage backend.
-    pub const fn minio_url(&self) -> &String {
-        &self.minio_url
+    pub const fn s3_url(&self) -> &String {
+        &self.s3_url
     }
 
     /// The access key for S3.
-    pub const fn minio_access_key(&self) -> &Secret<String> {
-        &self.minio_access_key
+    pub const fn s3_access_key(&self) -> &Secret<String> {
+        &self.s3_access_key
     }
 
     /// The secret key for S3.
-    pub const fn minio_secret_key(&self) -> &Secret<String> {
-        &self.minio_secret_key
+    pub const fn s3_secret_key(&self) -> &Secret<String> {
+        &self.s3_secret_key
     }
 
     /// The machine id.
@@ -220,13 +226,9 @@ impl Config {
         dotenv().ok();
         Self::builder()
             .database_url(std::env::var("DATABASE_URL").expect("DATABASE_URL environment variable must be set"))
-            .minio_url(std::env::var("MINIO_URL").expect("MINIO_URL environment variable must be set"))
-            .minio_access_key(
-                std::env::var("MINIO_ACCESS_KEY").expect("MINIO_ACCESS_KEY environment variable must be set"),
-            )
-            .minio_secret_key(
-                std::env::var("MINIO_SECRET_KEY").expect("MINIO_SECRET_KEY environment variable must be set"),
-            )
+            .s3_url(std::env::var("S3_URL").expect("S3_URL environment variable must be set"))
+            .s3_access_key(std::env::var("S3_ACCESS_KEY").expect("S3_ACCESS_KEY environment variable must be set"))
+            .s3_secret_key(std::env::var("S3_SECRET_KEY").expect("S3_SECRET_KEY environment variable must be set"))
             .machine_id(
                 std::env::var("MACHINE_ID")
                     .expect("MACHINE_ID environment variable must be set")

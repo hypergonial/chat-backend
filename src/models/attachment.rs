@@ -1,10 +1,10 @@
 use std::sync::LazyLock;
 
 use super::{
-    bucket::Buckets,
     channel::Channel,
     errors::{AppError, BuildError, RESTError},
     message::{ExtendedMessageRecord, Message},
+    s3::S3Service,
     state::App,
 };
 use axum::extract::multipart::Field;
@@ -164,7 +164,7 @@ impl FullAttachment {
     /// ## Errors
     ///
     /// * [`AppError::S3`] - If the S3 request fails.
-    pub async fn upload(&self, buckets: &Buckets) -> Result<(), AppError> {
+    pub async fn upload(&self, buckets: &S3Service) -> Result<(), AppError> {
         buckets
             .attachments()
             .put_object(self.s3_key(), self.content.clone(), &self.mime())
@@ -176,7 +176,7 @@ impl FullAttachment {
     /// ## Errors
     ///
     /// * [`AppError::S3`] - If the S3 request fails.
-    pub async fn download(&mut self, buckets: &Buckets) -> Result<(), AppError> {
+    pub async fn download(&mut self, buckets: &S3Service) -> Result<(), AppError> {
         self.content = buckets.attachments().get_object(self.s3_key()).await?;
         Ok(())
     }
@@ -187,7 +187,7 @@ impl FullAttachment {
     /// ## Errors
     ///
     /// * [`AppError::S3`] - If the S3 request fails.
-    pub async fn delete(&self, buckets: &Buckets) -> Result<(), AppError> {
+    pub async fn delete(&self, buckets: &S3Service) -> Result<(), AppError> {
         buckets.attachments().delete_object(self.s3_key()).await
     }
 }
@@ -264,7 +264,7 @@ impl PartialAttachment {
     /// ## Errors
     ///
     /// * [`AppError::S3`] - If the S3 request fails.
-    pub async fn download(self, buckets: &Buckets) -> Result<FullAttachment, AppError> {
+    pub async fn download(self, buckets: &S3Service) -> Result<FullAttachment, AppError> {
         let mut attachment = FullAttachment::new(
             self.id,
             self.filename,
