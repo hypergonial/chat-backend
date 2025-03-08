@@ -181,7 +181,7 @@ impl FirebaseMessaging {
     /// If the notification could not be sent.
     pub async fn send_notification(
         &self,
-        token: impl Into<&str>,
+        token: impl Into<String>,
         notification: Notification,
         data: Option<HashMap<String, String>>,
     ) -> Result<(), FirebaseError> {
@@ -189,7 +189,7 @@ impl FirebaseMessaging {
             &self.http,
             self.get_token().await?.as_str(),
             &*self.project_id,
-            token,
+            &*token.into(),
             &notification,
             data.as_ref(),
         )
@@ -213,10 +213,19 @@ impl FirebaseMessaging {
     /// If any notification could not be sent.
     pub async fn send_notification_to_multiple(
         &self,
-        tokens: Vec<impl Into<String>>,
+        mut tokens: Vec<impl Into<String>>,
         notification: Notification,
         data: Option<HashMap<String, String>>,
     ) -> Result<(), FirebaseError> {
+        if tokens.is_empty() {
+            return Ok(());
+        }
+
+        if tokens.len() == 1 {
+            let value = tokens.pop().expect("Vec of length 1 should have a value");
+            return self.send_notification(value, notification, data).await;
+        }
+
         // Spawn n tasks for each token
         let auth_token: Arc<str> = Arc::from(self.get_token().await?.as_str());
         let project_id: Arc<str> = Arc::from(self.project_id.clone());
