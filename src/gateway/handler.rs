@@ -490,25 +490,41 @@ pub enum SendMode {
 }
 
 enum Instruction {
+    /// Dispatch a new event with the given send mode
     Dispatch(GatewayEvent, SendMode),
+    /// Send an event to a specific user
     SendTo(Snowflake<User>, GatewayEvent),
+    /// Send an event to a specific session of a user
     SendToSession(ConnectionId, GatewayEvent),
+    /// Close a session with the given code and reason
     CloseSession(ConnectionId, GatewayCloseCode, String),
+    /// Close all sessions from a user with the given code and reason
     CloseUser(Snowflake<User>, GatewayCloseCode, String),
+    /// Close all sessions, shutting down the gateway
     CloseAll(oneshot::Sender<()>),
+    /// Remove a session handle from the gateway state (This does not send a close frame)
     RemoveSession(ConnectionId),
+    /// Add a new connection handle to the gateway state
     NewSession(ConnectionId, SessionHandle),
+    /// Add a new guild member instance to an existing connection, if it exists
     AddMember(Snowflake<User>, Snowflake<Guild>),
+    /// Remove a guild member instance from an existing connection, if it exists
     RemoveMember(Snowflake<User>, Snowflake<Guild>),
+    /// Subscribe to receive messages from a specific user
     SubscribeToUser(
         Snowflake<User>,
         oneshot::Sender<Option<broadcast::Receiver<(ConnectionId, GatewayMessage)>>>,
     ),
-    SubscribeToConn(
+    /// Subscribe to receive messages from a specific session
+    SubscribeToSession(
         ConnectionId,
         oneshot::Sender<Option<broadcast::Receiver<GatewayMessage>>>,
     ),
+    /// Query the connected status of a specific user
     QueryConnectedStatus(Snowflake<User>, oneshot::Sender<bool>),
+    /// Query the connected status of multiple users
+    /// The response will contain a set of users that are connected
+    QueryMultiConnectedStatus(HashSet<Snowflake<User>>, oneshot::Sender<HashSet<Snowflake<User>>>),
 }
 
 #[derive(Debug)]
@@ -534,7 +550,7 @@ impl GatewayActor {
     fn app(&self) -> App {
         self.app
             .upgrade()
-            .expect("GatewayInner is not bound to an ApplicationState")
+            .expect("GatewayActor is not bound to an ApplicationState")
     }
 
     pub async fn run(&mut self) {
@@ -554,14 +570,17 @@ impl GatewayActor {
                 Instruction::RemoveMember(user, guild) => self.remove_member(user, guild),
                 Instruction::CloseSession(conn, code, reason) => self.close_session(conn, code, reason),
                 Instruction::CloseUser(user, code, reason) => self.close_user_sessions(user, code, &reason),
-                Instruction::SubscribeToConn(id, tx) => {
+                Instruction::SubscribeToSession(id, tx) => {
                     let _ = tx.send(self.get_conn_recv(id));
                 }
-                Instruction::SubscribeToUser(user_id, tx) => {
-                    let _ = tx.send(self.get_user_recv(user_id));
+                Instruction::SubscribeToUser(id, tx) => {
+                    let _ = tx.send(self.get_user_recv(id));
                 }
                 Instruction::QueryConnectedStatus(id, tx) => {
                     let _ = tx.send(self.is_connected(id));
+                }
+                Instruction::QueryMultiConnectedStatus(ids, tx) => {
+                    let _ = tx.send(self.is_connected_multiple(ids));
                 }
                 Instruction::CloseAll(tx) => {
                     self.close();
@@ -824,6 +843,22 @@ impl GatewayActor {
         self.peermap.get(&user.into()).is_some_and(|conn| !conn.is_empty())
     }
 
+    /// Filter out users that are not connected
+    ///
+    /// ## Arguments
+    ///
+    /// * `users` - The users to filter
+    ///
+    /// ## Returns
+    ///
+    /// A set of users that are connected
+    fn is_connected_multiple(&self, users: HashSet<Snowflake<User>>) -> HashSet<Snowflake<User>> {
+        users
+            .into_iter()
+            .filter(|u| self.peermap.get(u).is_some_and(|conn| !conn.is_empty()))
+            .collect()
+    }
+
     /// Registers a new guild member instance to an existing connection
     ///
     /// ## Arguments
@@ -959,7 +994,7 @@ impl Gateway {
     /// or `None` if the connection does not exist
     pub async fn get_conn_recv(&self, id: ConnectionId) -> Option<broadcast::Receiver<GatewayMessage>> {
         let (tx, rx) = oneshot::channel();
-        self.send_instruction(Instruction::SubscribeToConn(id, tx));
+        self.send_instruction(Instruction::SubscribeToSession(id, tx));
 
         match rx.await {
             Ok(Some(receiver)) => Some(receiver),
@@ -1129,6 +1164,21 @@ impl Gateway {
     pub async fn is_connected(&self, user: impl Into<Snowflake<User>>) -> bool {
         let (tx, rx) = oneshot::channel();
         self.send_instruction(Instruction::QueryConnectedStatus(user.into(), tx));
+        rx.await.expect("Failed to query connection status")
+    }
+
+    /// Returns a set of users that are connected
+    /// from the given set of users
+    ///
+    /// ## Arguments
+    /// * `users` - The users to check for
+    ///
+    /// ## Returns
+    ///
+    /// A set of users that are connected
+    pub async fn is_connected_multiple(&self, users: HashSet<Snowflake<User>>) -> HashSet<Snowflake<User>> {
+        let (tx, rx) = oneshot::channel();
+        self.send_instruction(Instruction::QueryMultiConnectedStatus(users, tx));
         rx.await.expect("Failed to query connection status")
     }
 }

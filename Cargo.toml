@@ -59,6 +59,7 @@ chrono = { version = "0.4", default-features = false, features = [
     "std",
     "clock",
 ] }
+reqwest = { version = "0.12", features = ["rustls-tls", "json"] }
 # Consider swapping to using object-store instead? https://crates.io/crates/object_store
 aws-config = "1.5"
 aws-sdk-s3 = "1.76"
@@ -83,6 +84,8 @@ dashmap = "6.1"
 color-eyre = "0.6"
 data-url = "0.3"
 mimalloc = "0.1"
+gcp_auth = "0.12.3"
+
 
 [profile.dev.package.sqlx-macros]
 opt-level = 3
