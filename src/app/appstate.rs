@@ -60,11 +60,21 @@ impl ApplicationState {
             .build();
 
         let s3 = S3Service::new(Client::from_conf(s3conf));
+        let fcm = match FirebaseMessaging::new().await {
+            Ok(fcm) => Some(fcm),
+            Err(e) => {
+                tracing::error!(
+                    "Failed to initialize Firebase Messaging: {}\nPush Notifications will be unavailable.",
+                    e
+                );
+                None
+            }
+        };
 
         let mut state = Self {
             db: Database::new(),
             gateway: Gateway::new(),
-            fcm: Some(FirebaseMessaging::new().await?),
+            fcm,
             config,
             s3: Some(s3),
         };
