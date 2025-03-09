@@ -59,7 +59,11 @@ impl<'a> Ops<'a> {
         OpsBuilder::default()
     }
 
-    async fn s3_run(&self, f: impl AsyncFnOnce(&S3Service) -> Result<(), AppError>) -> Result<(), AppError> {
+    /// Run op on S3 if the S3 service is available.
+    async fn s3_run<'s, F: Future<Output = Result<(), AppError>>>(
+        &'s self,
+        f: impl FnOnce(&'s S3Service) -> F,
+    ) -> Result<(), AppError> {
         if let Some(s3) = self.s3 { f(s3).await } else { Ok(()) }
     }
 
@@ -309,9 +313,7 @@ impl<'a> Ops<'a> {
     pub async fn delete_channel(&self, channel: impl Into<Snowflake<Channel>>) -> Result<(), AppError> {
         let channel_id: Snowflake<Channel> = channel.into();
 
-        // FIXME: Error not handled
-        self.s3_run(async |s3| s3.remove_all_for_channel(channel_id).await)
-            .await?;
+        self.s3_run(|s3| s3.remove_all_for_channel(channel_id)).await?;
 
         sqlx::query!("DELETE FROM channels WHERE id = $1", channel_id as Snowflake<Channel>)
             .execute(self.db)
@@ -695,7 +697,7 @@ impl<'a> Ops<'a> {
         if needs_s3_update {
             match guild.avatar() {
                 Some(Avatar::Full(f)) => {
-                    self.s3_run(async |s3| f.upload(s3).await).await?;
+                    self.s3_run(|s3| f.upload(s3)).await?;
                 }
                 Some(Avatar::Partial(_)) => {
                     Err(BuildError::IllegalState("Cannot upload partial avatar".into()))?;
@@ -704,7 +706,7 @@ impl<'a> Ops<'a> {
             }
 
             if let Some(a) = old_guild.avatar() {
-                self.s3_run(async |s3| a.delete(s3).await).await?;
+                self.s3_run(|s3| a.delete(s3)).await?;
             }
         }
 
@@ -732,7 +734,7 @@ impl<'a> Ops<'a> {
     pub async fn delete_guild(&self, guild: impl Into<Snowflake<Guild>>) -> Result<(), AppError> {
         let guild_id: Snowflake<Guild> = guild.into();
 
-        self.s3_run(async |s3| s3.remove_all_for_guild(guild_id).await).await?;
+        self.s3_run(|s3| s3.remove_all_for_guild(guild_id)).await?;
 
         sqlx::query!("DELETE FROM guilds WHERE id = $1", guild_id as Snowflake<Guild>)
             .execute(self.db)
@@ -857,8 +859,7 @@ impl<'a> Ops<'a> {
             .execute(self.db)
             .await?;
 
-        self.s3_run(async |s3| s3.remove_all_for_message(channel, message_id).await)
-            .await?;
+        self.s3_run(|s3| s3.remove_all_for_message(channel, message_id)).await?;
 
         Ok(())
     }
@@ -1055,7 +1056,7 @@ impl<'a> Ops<'a> {
 
         if needs_s3_update {
             match user.avatar() {
-                Some(Avatar::Full(f)) => self.s3_run(async |s3| f.upload(s3).await).await?,
+                Some(Avatar::Full(f)) => self.s3_run(|s3| f.upload(s3)).await?,
                 Some(Avatar::Partial(_)) => {
                     return Err(BuildError::IllegalState("Cannot upload partial avatar".into()).into());
                 }
@@ -1063,7 +1064,7 @@ impl<'a> Ops<'a> {
             }
 
             if let Some(a) = old_user.avatar() {
-                self.s3_run(async |s3| a.delete(s3).await).await?;
+                self.s3_run(|s3| a.delete(s3)).await?;
             }
         }
 
@@ -1088,7 +1089,7 @@ impl<'a> Ops<'a> {
     ///
     /// * [`AppError::S3`] - If the S3 request fails.
     pub async fn create_attachment(&self, attachment: &FullAttachment) -> Result<(), AppError> {
-        self.s3_run(async |s3| attachment.upload(s3).await).await?;
+        self.s3_run(|s3| attachment.upload(s3)).await?;
 
         sqlx::query!(
             "INSERT INTO attachments (id, filename, message_id, channel_id, content_type)
