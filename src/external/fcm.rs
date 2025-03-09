@@ -213,17 +213,14 @@ impl FirebaseMessaging {
     /// If any notification could not be sent.
     pub async fn send_notification_to_multiple(
         &self,
-        mut tokens: Vec<impl Into<String>>,
+        tokens: impl IntoIterator<Item = impl Into<String>>,
         notification: Notification,
         data: Option<HashMap<String, String>>,
     ) -> Result<(), FirebaseError> {
-        if tokens.is_empty() {
-            return Ok(());
-        }
+        let mut peekable = tokens.into_iter().peekable();
 
-        if tokens.len() == 1 {
-            let value = tokens.pop().expect("Vec of length 1 should have a value");
-            return self.send_notification(value, notification, data).await;
+        if peekable.peek().is_none() {
+            return Ok(());
         }
 
         // Spawn n tasks for each token
@@ -232,7 +229,7 @@ impl FirebaseMessaging {
         let notification: Arc<Notification> = Arc::new(notification);
         let data: Option<Arc<HashMap<String, String>>> = data.map(Arc::new);
 
-        let tasks = tokens.into_iter().map(|token| {
+        let tasks = peekable.map(|token| {
             let auth_token = auth_token.clone();
             let project_id = project_id.clone();
             let notification = notification.clone();

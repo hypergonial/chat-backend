@@ -1,9 +1,12 @@
+use std::collections::{HashMap, HashSet};
+
 use chrono::Utc;
 use derive_builder::Builder;
+use itertools::Itertools;
 
 use crate::{
     app::Config,
-    external::{Database, S3Service},
+    external::{Database, FirebaseMessaging, S3Service, fcm::Notification},
     gateway::handler::{ConnectionId, Gateway, SendMode},
     models::{
         attachment::{Attachment, AttachmentLike, FullAttachment},
@@ -14,7 +17,7 @@ use crate::{
         guild::{Guild, GuildRecord},
         member::{ExtendedMemberRecord, Member, MemberRecord, UserLike},
         message::{ExtendedMessageRecord, Message},
-        request_payloads::{CreateGuild, CreateUser, UpdateGuild, UpdateMessage, UpdateUser},
+        request_payloads::{CreateGuild, CreateUser, UpdateFCMToken, UpdateGuild, UpdateMessage, UpdateUser},
         snowflake::Snowflake,
         user::{Presence, User, UserRecord},
     },
@@ -36,6 +39,11 @@ pub struct Ops<'a> {
     /// If not provided, gateway operations will be skipped.
     #[builder(default)]
     gateway: Option<&'a Gateway>,
+
+    /// The Firebase Cloud Messaging service to use for push notifications.
+    /// If not provided, push notification operations will be skipped.
+    #[builder(default)]
+    fcm: Option<&'a FirebaseMessaging>,
 }
 
 impl<'a> Ops<'a> {
@@ -45,12 +53,14 @@ impl<'a> Ops<'a> {
         config: &'a Config,
         s3: Option<&'a S3Service>,
         gateway: Option<&'a Gateway>,
+        fcm: Option<&'a FirebaseMessaging>,
     ) -> Self {
         Self {
             db,
             config,
             s3,
             gateway,
+            fcm,
         }
     }
 
@@ -390,7 +400,7 @@ impl<'a> Ops<'a> {
                 channel.into(),
                 before.map(Into::into),
                 after.map(Into::into),
-                i64::from(limit.unwrap_or(50).min(100))
+                i64::from(limit.unwrap_or(50).clamp(2, 100))
             )
             .fetch_all(self.db)
             .await?
@@ -430,7 +440,7 @@ impl<'a> Ops<'a> {
             .await?
         };
 
-        Ok(Message::from_records(&records)?)
+        Ok(Message::from_records(records)?)
     }
 
     /// Fetches a guild from the database by ID.
@@ -771,7 +781,7 @@ impl<'a> Ops<'a> {
         .fetch_all(self.db)
         .await?;
 
-        Ok(Message::from_records(&records)?.pop())
+        Ok(Message::from_records(records)?.pop())
     }
 
     /// Commit this message to the database. Uploads all attachments to S3.
@@ -1104,6 +1114,113 @@ impl<'a> Ops<'a> {
         )
         .execute(self.db)
         .await?;
+
+        Ok(())
+    }
+
+    /// Send a push notification to all inactive users in the guild.
+    /// This function is a no-op if FCM is not configured.
+    ///
+    /// ## Arguments
+    ///
+    /// * `guild` - The guild to send the notification to.
+    /// * `originating_channel` - The channel the notification originated from.
+    /// * `notification` - The notification to send.
+    ///
+    /// ## Errors
+    ///
+    /// * [`AppError::Firebase`] - If the FCM request fails.
+    /// * [`AppError::Database`] - If the database query fails.
+    pub async fn send_push_notif_to_inactives(
+        &self,
+        guild: impl Into<Snowflake<Guild>>,
+        originating_channel: impl Into<Snowflake<Channel>>,
+        notification: Notification,
+    ) -> Result<(), AppError> {
+        let Some(fcm) = self.fcm else {
+            // Ignore if no FCM is configured
+            return Ok(());
+        };
+
+        // Get all push tokens of all users in the guild
+        let guild_id = guild.into();
+
+        // Get the notification tokens of all users in the guild
+        let mut tokens = sqlx::query!(
+            "SELECT fcm_tokens.user_id, fcm_tokens.token
+            FROM fcm_tokens
+            JOIN members ON members.user_id = fcm_tokens.user_id
+            WHERE members.guild_id = $1",
+            guild_id as Snowflake<Guild>
+        )
+        .fetch_all(self.db)
+        .await?
+        .into_iter()
+        .into_grouping_map_by(|r| Snowflake::<User>::from(r.user_id))
+        .fold(Vec::new(), |mut acc, _id, val| {
+            acc.push(val.token);
+            acc
+        });
+
+        // Remove users that are currently connected
+        if let Some(gateway) = self.gateway.as_ref() {
+            let user_ids = tokens.keys().copied().collect::<HashSet<_>>();
+            let connected = gateway.is_connected_multiple(user_ids).await;
+            tokens.retain(|id, _v| !connected.contains(id));
+        }
+
+        let data = HashMap::from([
+            ("type".to_string(), "notification".to_string()),
+            ("guild_id".to_string(), guild_id.to_string()),
+            ("channel_id".to_string(), originating_channel.into().to_string()),
+        ]);
+
+        fcm.send_notification_to_multiple(tokens.into_values().flatten(), notification, Some(data))
+            .await?;
+
+        Ok(())
+    }
+
+    /// Update the FCM token for a user. If a previous token is provided, it will be removed.
+    ///
+    /// ## Arguments
+    ///
+    /// * `user` - The user to update the FCM token for.
+    /// * `payload` - The update payload.
+    ///
+    /// ## Errors
+    ///
+    /// * [`sqlx::Error`] - If the database query fails.
+    pub async fn update_fcm_token(
+        &self,
+        user: impl Into<Snowflake<User>>,
+        payload: UpdateFCMToken,
+    ) -> Result<(), sqlx::Error> {
+        let user_id = user.into();
+
+        let mut tx = self.db.begin().await?;
+
+        sqlx::query!(
+            "INSERT INTO fcm_tokens (user_id, token)
+            VALUES ($1, $2)
+            ON CONFLICT (user_id) DO NOTHING",
+            user_id as Snowflake<User>,
+            payload.token,
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        if let Some(prev_token) = payload.previous_token {
+            sqlx::query!(
+                "DELETE FROM fcm_tokens WHERE user_id = $1 AND token = $2",
+                user_id as Snowflake<User>,
+                prev_token,
+            )
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        tx.commit().await?;
 
         Ok(())
     }

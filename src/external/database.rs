@@ -86,6 +86,19 @@ impl Database {
     pub async fn close(&self) {
         self.pool().close().await;
     }
+
+    /// Begin a new transaction.
+    ///
+    /// ## Returns
+    ///
+    /// A new transaction
+    ///
+    /// ## Errors
+    ///
+    /// If the transaction could not be started
+    pub async fn begin(&self) -> Result<sqlx::Transaction<'static, sqlx::Postgres>, sqlx::Error> {
+        self.pool().begin().await
+    }
 }
 
 // Allow the Database instance to be used as an executor directly

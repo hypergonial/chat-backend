@@ -376,6 +376,30 @@ impl TryFrom<&ExtendedMessageRecord> for PartialAttachment {
     }
 }
 
+impl TryFrom<ExtendedMessageRecord> for PartialAttachment {
+    type Error = BuildError;
+
+    fn try_from(record: ExtendedMessageRecord) -> Result<Self, Self::Error> {
+        let id = record
+            .attachment_id
+            .ok_or(BuildError::UninitializedField("No attachment ID"))?;
+        let filename = record
+            .attachment_filename
+            .ok_or(BuildError::UninitializedField("No attachment filename"))?;
+        Ok(Self {
+            id: id.try_into().map_err(|_| {
+                BuildError::ValidationError("attachment ID should be a single positive digit".to_string())
+            })?,
+            channel_id: record.channel_id.into(),
+            message_id: record.id.into(),
+            filename,
+            content_type: record
+                .attachment_content_type
+                .unwrap_or_else(|| "application/octet-stream".into()),
+        })
+    }
+}
+
 impl AttachmentLike for PartialAttachment {
     fn id(&self) -> u8 {
         self.id

@@ -11,7 +11,7 @@ use dotenvy::dotenv;
 use secrecy::{ExposeSecret, Secret};
 
 use super::ops::Ops;
-use crate::models::errors::BuildError;
+use crate::{external::FirebaseMessaging, models::errors::BuildError};
 use crate::{
     external::{Database, S3Service},
     gateway::handler::Gateway,
@@ -27,6 +27,7 @@ pub struct ApplicationState {
     gateway: Gateway,
     pub config: Config,
     s3: Option<S3Service>,
+    fcm: Option<FirebaseMessaging>,
 }
 
 impl ApplicationState {
@@ -63,6 +64,7 @@ impl ApplicationState {
         let mut state = Self {
             db: Database::new(),
             gateway: Gateway::new(),
+            fcm: Some(FirebaseMessaging::new().await?),
             config,
             s3: Some(s3),
         };
@@ -94,12 +96,14 @@ impl ApplicationState {
         gateway: Gateway,
         config: Config,
         s3: Option<S3Service>,
+        fcm: Option<FirebaseMessaging>,
     ) -> Result<Arc<Self>, AppError> {
         let mut state = Self {
             db,
             gateway,
             config,
             s3,
+            fcm,
         };
 
         state.init().await?;
@@ -156,7 +160,13 @@ impl ApplicationState {
 
     #[inline]
     pub const fn ops(&self) -> Ops {
-        Ops::new(&self.db, &self.config, self.s3.as_ref(), Some(&self.gateway))
+        Ops::new(
+            &self.db,
+            &self.config,
+            self.s3.as_ref(),
+            Some(&self.gateway),
+            self.fcm.as_ref(),
+        )
     }
 }
 

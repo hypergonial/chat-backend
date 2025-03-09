@@ -14,7 +14,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use thiserror::Error;
 
-use crate::gateway::handler::GatewayCloseCode;
+use crate::{external::fcm::FirebaseError, gateway::handler::GatewayCloseCode};
 
 /// An error response returned by the REST API.
 #[derive(Debug, Clone)]
@@ -201,6 +201,8 @@ pub enum AppError {
     Axum(#[from] axum::Error),
     #[error("Not Found: {0}")]
     NotFound(String),
+    #[error("Messaging Service Error: {0}")]
+    Firebase(#[from] FirebaseError),
     #[error("Internal Server Error: {0}")]
     Unexpected(String),
 }
@@ -218,7 +220,9 @@ impl AppError {
             }
             Self::Regex(_) | Self::ParseInt(_) | Self::JSON(_) => StatusCode::BAD_REQUEST,
             Self::Build(e) => e.status_code(),
-            Self::Axum(_) | Self::Database(_) | Self::S3(_) | Self::Unexpected(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::Axum(_) | Self::Database(_) | Self::S3(_) | Self::Firebase(_) | Self::Unexpected(_) => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
             Self::Auth(e) => e.status_code(),
             Self::NotFound(_) => StatusCode::NOT_FOUND,
         }

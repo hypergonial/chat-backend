@@ -176,3 +176,10 @@ pub struct UpdatePrefs {
     pub text_size: Option<u8>,
     pub locale: Option<String>,
 }
+
+/// Update payload for FCM token updates
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateFCMToken {
+    pub token: String,
+    pub previous_token: Option<String>,
+}

@@ -1,14 +1,14 @@
 use axum::extract::Multipart;
 use chrono::{DateTime, Utc};
 use derive_builder::Builder;
+use itertools::Itertools;
 use serde::Serialize;
-use slice_group_by::GroupBy;
 
 use crate::app::Config;
 
 use super::{
     attachment::{Attachment, AttachmentLike, FullAttachment},
-    avatar::{Avatar, PartialAvatar, UserAvatar},
+    avatar::{Avatar, PartialAvatar},
     channel::Channel,
     errors::{BuildError, RESTError},
     member::UserLike,
@@ -145,50 +145,70 @@ impl Message {
     /// ## Errors
     ///
     /// * [`BuildError`] - If the records are invalid
-    pub fn from_records(records: &[ExtendedMessageRecord]) -> Result<Vec<Self>, BuildError> {
-        if records.is_empty() {
-            return Ok(Vec::new());
-        }
-
+    pub fn from_records(records: impl IntoIterator<Item = ExtendedMessageRecord>) -> Result<Vec<Self>, BuildError> {
         records
-            .linear_group_by(|a, b| a.id == b.id)
-            .map(|group| {
-                let author = {
-                    if let Some(user_id) = group[0].user_id {
-                        let avatar: Option<Avatar<UserAvatar>> = group[0]
-                            .avatar_hash
-                            .clone()
-                            .map(|h| PartialAvatar::new(h, user_id).map(Avatar::Partial))
-                            .transpose()?;
+            .into_iter()
+            .into_grouping_map_by(|r| Snowflake::<Self>::from(r.id))
+            .aggregate(|msg, _id, entry| {
+                // First entry, aggregate is None
+                match msg {
+                    None => {
+                        let attachment = (&entry)
+                            .try_into()
+                            .map(Attachment::Partial)
+                            .map_or_else(|_| Vec::new(), |a| vec![a]);
 
-                        let user = User::builder()
-                            .id(user_id)
-                            .username(group[0].username.clone().expect("User should have username")) // SAFETY: This is safe because user_id is not None.
-                            .display_name(group[0].display_name.clone())
-                            .avatar(avatar)
-                            .build()?;
-                        Some(UserLike::User(user))
-                    } else {
-                        None
+                        let author = {
+                            if let Some(user_id) = entry.user_id {
+                                let avatar = match entry
+                                    .avatar_hash
+                                    .map(|h| PartialAvatar::new(h, user_id).map(Avatar::Partial))
+                                {
+                                    Some(Ok(avatar)) => Some(avatar),
+                                    Some(Err(e)) => return Some(Err(e)),
+                                    None => None,
+                                };
+
+                                let user = match User::builder()
+                                    .id(user_id)
+                                    .username(entry.username.expect("User should have username")) // This is fine because user_id is not None.
+                                    .display_name(entry.display_name)
+                                    .avatar(avatar)
+                                    .build()
+                                {
+                                    Ok(user) => user,
+                                    Err(e) => return Some(Err(e)),
+                                };
+
+                                Some(UserLike::User(user))
+                            } else {
+                                None
+                            }
+                        };
+
+                        Some(Ok(Self {
+                            id: entry.id.into(),
+                            channel_id: entry.channel_id.into(),
+                            edited: entry.edited,
+                            author,
+                            content: entry.content,
+                            nonce: None,
+                            attachments: attachment,
+                        }))
                     }
-                };
+                    // An aggregate value already exists, append the attachment to the message
+                    Some(Ok(mut msg)) => {
+                        if let Ok(attachment) = entry.try_into().map(Attachment::Partial) {
+                            msg.attachments.push(attachment);
+                        };
 
-                let attachments = group
-                    .iter()
-                    .flat_map(TryInto::try_into)
-                    .map(Attachment::Partial)
-                    .collect();
-
-                Ok(Self {
-                    id: group[0].id.into(),
-                    channel_id: group[0].channel_id.into(),
-                    edited: group[0].edited,
-                    author,
-                    content: group[0].content.clone(),
-                    nonce: None,
-                    attachments,
-                })
+                        Some(Ok(msg))
+                    }
+                    // Pass the error through, the build failed upstream
+                    Some(Err(e)) => Some(Err(e)),
+                }
             })
+            .into_values()
             .collect()
     }
 
