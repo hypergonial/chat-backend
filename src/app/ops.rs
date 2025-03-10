@@ -1219,6 +1219,8 @@ impl<'a> Ops<'a> {
                     .await?;
             }
 
+            tracing::debug!(invalid_token_count = %invalid_tokens.len(), "Removed {} invalid FCM tokens", invalid_tokens.len());
+
             if has_errors {
                 return Err(AppError::FirebaseMulti(errors));
             }
@@ -1249,7 +1251,7 @@ impl<'a> Ops<'a> {
         if let Err(e) = sqlx::query!(
             "INSERT INTO fcm_tokens (user_id, token)
             VALUES ($1, $2)
-            ON CONFLICT (user_id) DO NOTHING",
+            ON CONFLICT (user_id, token) DO UPDATE SET last_refresh = NOW()",
             user_id as Snowflake<User>,
             payload.token,
         )
@@ -1276,5 +1278,43 @@ impl<'a> Ops<'a> {
         tx.commit().await?;
 
         Ok(())
+    }
+
+    /// Remove an FCM token for a user.
+    ///
+    /// ## Arguments
+    ///
+    /// * `user` - The user to remove the FCM token for.
+    /// * `token` - The token to remove.
+    ///
+    /// ## Errors
+    ///
+    /// * [`sqlx::Error`] - If the database query fails.
+    pub async fn remove_fcm_token(&self, user: impl Into<Snowflake<User>>, token: &str) -> Result<(), sqlx::Error> {
+        sqlx::query!(
+            "DELETE FROM fcm_tokens WHERE user_id = $1 AND token = $2",
+            user.into() as Snowflake<User>,
+            token,
+        )
+        .execute(self.db)
+        .await?;
+        Ok(())
+    }
+
+    /// Clear all FCM tokens that have not been refreshed in the last 30 days.
+    ///
+    /// ## Returns
+    ///
+    /// The number of stale FCM tokens removed.
+    ///
+    /// ## Errors
+    ///
+    /// * [`sqlx::Error`] - If the database query fails.
+    pub async fn clear_stale_fcm_tokens(&self) -> Result<u64, sqlx::Error> {
+        let res = sqlx::query!("DELETE FROM fcm_tokens WHERE last_refresh < NOW() - INTERVAL '30 days'")
+            .execute(self.db)
+            .await?;
+
+        Ok(res.rows_affected())
     }
 }

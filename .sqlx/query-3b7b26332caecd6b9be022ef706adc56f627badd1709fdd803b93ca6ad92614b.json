@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM fcm_tokens WHERE last_refresh < NOW() - INTERVAL '30 days'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "3b7b26332caecd6b9be022ef706adc56f627badd1709fdd803b93ca6ad92614b"
+}

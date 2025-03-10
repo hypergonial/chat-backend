@@ -188,8 +188,8 @@ impl FirebaseMessaging {
         };
 
         let mut attempts = 0;
-        let max_attempts = 5; // Maximum retry attempts
-        let base_delay = Duration::from_millis(100); // Starting delay (100ms)
+        let max_attempts = 10; // Maximum retry attempts
+        let base_delay = Duration::from_secs(10); // Starting delay
 
         loop {
             attempts += 1;
@@ -225,6 +225,10 @@ impl FirebaseMessaging {
                             .headers()
                             .get("Retry-After")
                             .and_then(|value| value.to_str().ok().and_then(|value| value.parse::<u64>().ok()));
+
+                        if retry_after.is_none() && response.status() == StatusCode::TOO_MANY_REQUESTS {
+                            retry_after = Some(60); // Default to 60 seconds as per FCM docs, quotas reset every minute
+                        }
                     } else {
                         return Ok(());
                     }

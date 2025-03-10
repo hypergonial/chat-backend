@@ -144,6 +144,26 @@ impl ApplicationState {
         Ok(())
     }
 
+    /// Spawn maintenance tasks to run in the background.
+    pub fn spawn_background_tasks(self: &Arc<Self>) {
+        let app = self.clone();
+
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(tokio::time::Duration::from_secs(3600 * 24 /* 1 day */)).await;
+                tracing::info!("Clearing stale FCM tokens...");
+                match app.ops().clear_stale_fcm_tokens().await {
+                    Ok(count) => {
+                        tracing::info!("Cleared {} stale FCM tokens.", count);
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to clear stale FCM tokens: {}", e);
+                    }
+                }
+            }
+        });
+    }
+
     /// The gateway instance of the application.
     #[inline]
     pub const fn gateway(&self) -> &Gateway {

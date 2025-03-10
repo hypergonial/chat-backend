@@ -70,6 +70,7 @@ async fn main() -> Result<()> {
 
     // Initialize the application state
     let state = ApplicationState::from_env().await?;
+    state.spawn_background_tasks();
 
     let router = Router::new()
         .nest("/gateway/v1", gateway::handler::get_router())

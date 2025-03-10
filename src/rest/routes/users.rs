@@ -2,7 +2,7 @@ use axum::{
     Json, Router,
     extract::{Path, State},
     http::StatusCode,
-    routing::{get, patch, post, put},
+    routing::{delete, get, patch, post, put},
 };
 use secrecy::ExposeSecret;
 use serde_json::{Value, json};
@@ -16,7 +16,7 @@ use crate::{
         errors::RESTError,
         gateway_event::GatewayEvent,
         guild::Guild,
-        request_payloads::{CreateUser, UpdateFCMToken, UpdateUser},
+        request_payloads::{CreateUser, RemoveFCMToken, UpdateFCMToken, UpdateUser},
         user::{Presence, User},
     },
     rest::auth::{generate_hash, validate_credentials},
@@ -26,9 +26,11 @@ pub fn get_router() -> Router<App> {
     Router::new()
         .route("/users", post(create_user))
         .route("/users/auth", get(auth_user))
+        .route("/users/auth/refresh", post(refresh_token))
         .route("/users/@me", get(fetch_self))
         .route("/users/@me/guilds", get(fetch_self_guilds))
         .route("/users/@me/fcm", put(update_fcm_token))
+        .route("/users/@me/fcm", delete(remove_fcm_token))
         .route("/users/@me/presence", patch(update_presence))
         .route("/usernames/{username}", get(query_username))
         .route(
@@ -88,6 +90,28 @@ async fn auth_user(State(app): State<App>, credentials: Credentials) -> Result<J
     Ok(Json(json!({
         "user_id": user_id,
         "token": token.expose_secret(),
+    })))
+}
+
+/// Refresh a user's token. This generates a new token for the user.
+///
+/// ## Arguments
+///
+/// * `token` - The user's session token, already validated
+///
+/// ## Returns
+///
+/// * `{"user_id": user_id, "token": token}` - A JSON response containing the new session token and `user_id`
+///
+/// ## Endpoint
+///
+/// POST `/users/auth/refresh`
+async fn refresh_token(State(app): State<App>, token: Token) -> Result<Json<Value>, RESTError> {
+    let new_token = Token::new_for(app.config.app_secret(), token.data().user_id())?;
+
+    Ok(Json(json!({
+        "user_id": token.data().user_id(),
+        "token": new_token.expose_secret(),
     })))
 }
 
@@ -247,7 +271,7 @@ async fn query_username(State(app): State<App>, Path(username): Path<String>) ->
 /// ## Arguments
 ///
 /// * `token` - The user's session token, already validated
-/// * `payload` - The `UpdateFCMToken` payload, containing the new FCM token (and optionally the previous one)
+/// * `payload` - The [`UpdateFCMToken`] payload, containing the new FCM token (and optionally the previous one)
 ///
 /// ## Returns
 ///
@@ -265,6 +289,22 @@ async fn update_fcm_token(
     State(app): State<App>,
     token: Token,
     Json(payload): Json<UpdateFCMToken>,
+) -> Result<StatusCode, RESTError> {
+    payload.perform_request(&app, token.data().user_id()).await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Remove the FCM token for the token-holder. This removes an FCM token from the user's account.
+///
+/// ## Arguments
+///
+/// * `token` - The user's session token, already validated
+/// * `payload` - The [`RemoveFCMToken`] payload, containing the FCM token to remove
+async fn remove_fcm_token(
+    State(app): State<App>,
+    token: Token,
+    Json(payload): Json<RemoveFCMToken>,
 ) -> Result<StatusCode, RESTError> {
     payload.perform_request(&app, token.data().user_id()).await?;
 

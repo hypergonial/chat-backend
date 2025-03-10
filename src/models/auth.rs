@@ -44,7 +44,8 @@ impl TokenData {
         Self {
             user_id,
             iat,
-            exp: Utc::now().timestamp() as usize + 86400,
+            // 30 days
+            exp: Utc::now().timestamp() as usize + 2_592_000,
         }
     }
 

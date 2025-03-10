@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO fcm_tokens (user_id, token)\n            VALUES ($1, $2)\n            ON CONFLICT (user_id, token) DO UPDATE SET last_refresh = NOW()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b83737eba51e1b7c51b5c75419ea3d1c0ab5e6f3d6dad3190e412f9f394abc0f"
+}

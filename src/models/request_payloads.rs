@@ -207,3 +207,31 @@ impl UpdateFCMToken {
         app.ops().update_fcm_token(user, self).await
     }
 }
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RemoveFCMToken {
+    pub token: String,
+}
+
+impl RemoveFCMToken {
+    /// Perform the remove operation
+    ///
+    /// This is a shorthand for `app.ops().remove_fcm_token(user, &payload.token).await`
+    ///
+    /// # Parameters
+    ///
+    /// - `app` - The application state
+    /// - `user` - The user to remove the token from
+    ///
+    /// # Errors
+    ///
+    /// - [`sqlx::Error`] if the delete operation fails
+    #[inline]
+    pub async fn perform_request(
+        self,
+        app: &ApplicationState,
+        user: impl Into<Snowflake<User>>,
+    ) -> Result<(), sqlx::Error> {
+        app.ops().remove_fcm_token(user, &self.token).await
+    }
+}
