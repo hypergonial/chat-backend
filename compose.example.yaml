@@ -35,7 +35,7 @@ services:
       POSTGRES_PORT: ${POSTGRES_PORT:-5432}
 
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - "${DATA_PATH:?err}/postgres:/var/lib/postgresql/data"
     networks:
       - private
 
@@ -44,16 +44,16 @@ services:
     hostname: minio1
     restart: always
     volumes:
-      - minio_data1-1:/minio_data1
-      - minio_data1-2:/minio_data2
+      - "${DATA_PATH:?err}/minio/minio1_1:/minio_data1"
+      - "${DATA_PATH:?err}/minio/minio1_2:/minio_data2"
 
   minio2:
     <<: *minio-common
     hostname: minio2
     restart: always
     volumes:
-      - minio_data2-1:/minio_data1
-      - minio_data2-2:/minio_data2
+      - "${DATA_PATH:?err}/minio/minio2_1:/minio_data1"
+      - "${DATA_PATH:?err}/minio/minio2_2:/minio_data2"
 
   minio-loadbalancer:
     image: nginx:1.25.1-alpine
@@ -99,9 +99,9 @@ services:
       RUST_BACKTRACE: ${RUST_BACKTRACE:-0}
     ports:
       - 8080:8080
-    # Change this to the folder that contains the FCM credentials, remove if not using Firebase
+    # Remove if not using Firebase for push notifications
     volumes:
-      - ./config:/config:ro
+      - "${CONFIG_PATH:?err}:/config:ro"
     depends_on:
       - db
       - minio-loadbalancer
@@ -112,13 +112,3 @@ services:
 networks:
   private:
     external: false
-
-# NOTE: It is STRONGLY recommended to use at least directories for volumes as persistent data instead.
-# See: https://docs.docker.com/engine/storage/volumes/
-# See: https://docs.docker.com/reference/compose-file/volumes/
-volumes:
-  postgres_data:
-  minio_data1-1:
-  minio_data1-2:
-  minio_data2-1:
-  minio_data2-2:
