@@ -56,7 +56,7 @@ impl ApplicationState {
             .endpoint_url(config.s3_url())
             .credentials_provider(s3creds)
             .force_path_style(true) // MinIO does not support virtual hosts
-            .behavior_version(BehaviorVersion::v2024_03_28())
+            .behavior_version(BehaviorVersion::v2025_01_17())
             .build();
 
         let s3 = S3Service::new(Client::from_conf(s3conf));

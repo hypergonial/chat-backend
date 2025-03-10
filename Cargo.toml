@@ -53,6 +53,7 @@ sqlx = { version = "0.8", features = [
     "macros",
     "migrate",
     "postgres",
+    "chrono",
 ] }
 chrono = { version = "0.4", default-features = false, features = [
     "alloc",
