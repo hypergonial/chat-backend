@@ -121,13 +121,13 @@ impl Message {
 
     /// A nonce that can be used by a client to determine if the message was sent.
     /// The nonce is not stored in the database and thus is not returned by REST calls.
-    pub const fn nonce(&self) -> Option<&String> {
-        self.nonce.as_ref()
+    pub fn nonce(&self) -> Option<&str> {
+        self.nonce.as_deref()
     }
 
     /// The content of the message.
-    pub const fn content(&self) -> Option<&String> {
-        self.content.as_ref()
+    pub fn content(&self) -> Option<&str> {
+        self.content.as_deref()
     }
 
     /// Mutable handle to the content of the message.

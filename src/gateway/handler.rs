@@ -1177,6 +1177,10 @@ impl Gateway {
     ///
     /// A set of users that are connected
     pub async fn is_connected_multiple(&self, users: HashSet<Snowflake<User>>) -> HashSet<Snowflake<User>> {
+        if users.is_empty() {
+            return users;
+        }
+
         let (tx, rx) = oneshot::channel();
         self.send_instruction(Instruction::QueryMultiConnectedStatus(users, tx));
         rx.await.expect("Failed to query connection status")

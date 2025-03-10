@@ -203,6 +203,8 @@ pub enum AppError {
     NotFound(String),
     #[error("Messaging Service Error: {0}")]
     Firebase(#[from] FirebaseError),
+    #[error("Messaging Service Error: {0:?}")]
+    FirebaseMulti(Vec<FirebaseError>),
     #[error("Internal Server Error: {0}")]
     Unexpected(String),
 }
@@ -220,9 +222,12 @@ impl AppError {
             }
             Self::Regex(_) | Self::ParseInt(_) | Self::JSON(_) => StatusCode::BAD_REQUEST,
             Self::Build(e) => e.status_code(),
-            Self::Axum(_) | Self::Database(_) | Self::S3(_) | Self::Firebase(_) | Self::Unexpected(_) => {
-                StatusCode::INTERNAL_SERVER_ERROR
-            }
+            Self::Axum(_)
+            | Self::Database(_)
+            | Self::S3(_)
+            | Self::Firebase(_)
+            | Self::FirebaseMulti(_)
+            | Self::Unexpected(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::Auth(e) => e.status_code(),
             Self::NotFound(_) => StatusCode::NOT_FOUND,
         }

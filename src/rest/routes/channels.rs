@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     app::App,
+    external::fcm::Notification,
     gateway::SendMode,
     models::{
         auth::Token,
@@ -159,6 +160,8 @@ async fn create_message(
         .await?
         .ok_or(RESTError::Forbidden("Not permitted to access resource.".into()))?;
 
+    let username = member.user().username().to_string();
+
     let message = Message::from_formdata(&app.config, UserLike::Member(member), channel_id, payload).await?;
 
     app.ops().commit_message(&message).await?;
@@ -171,10 +174,39 @@ async fn create_message(
         .update_read_state(token.data().user_id(), channel.id(), message.id())
         .await?;
 
+    let task_app = app.clone();
+    let guild_id = channel.guild_id();
+    let mut notif_body: String = message.content().unwrap_or("No content provided.").to_string();
+
+    if notif_body.len() > 100 {
+        notif_body.truncate(97);
+        notif_body.push_str("...");
+    }
+
+    let notif = Notification {
+        title: format!("@{} in #{}", username, channel.name()),
+        body: notif_body,
+    };
+
+    tokio::spawn(async move {
+        if let Err(e) = task_app
+            .ops()
+            .send_push_notif_to_inactives(guild_id, channel_id, notif)
+            .await
+        {
+            tracing::error!(
+                guild = %guild_id,
+                error = ?e,
+                "Failed to send push notification to inactives in guild",
+            );
+        }
+    });
+
     app.gateway().dispatch(
         GatewayEvent::MessageCreate(message),
         SendMode::ToGuild(channel.guild_id()),
     );
+
     Ok((StatusCode::CREATED, reply))
 }
 

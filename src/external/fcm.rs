@@ -1,8 +1,13 @@
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    fmt::{self, Display, Formatter},
+    sync::Arc,
+    time::Duration,
+};
 
 use gcp_auth;
 use http::StatusCode;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use thiserror::Error;
 
@@ -23,6 +28,33 @@ pub struct Notification {
     pub body: String,
 }
 
+#[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[non_exhaustive]
+pub enum FCMErrorCode {
+    UnspecifiedError,
+    InvalidArgument,
+    Unregistered,
+    SenderIdMismatch,
+    QuotaExceeded,
+    Unavailable,
+    Internal,
+    ThirdPartyAuthError,
+    #[serde(other)]
+    Unknown,
+}
+
+#[derive(Debug, Error, Deserialize, Clone)]
+pub struct FCMApiError {
+    pub error_code: FCMErrorCode,
+}
+
+impl Display for FCMApiError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "FCM API error: {:?}", self.error_code)
+    }
+}
+
 /// An implementation of Firebase Cloud Messaging (FCM) for sending push notifications.
 pub struct FirebaseMessaging {
     provider: Arc<dyn gcp_auth::TokenProvider>,
@@ -31,11 +63,46 @@ pub struct FirebaseMessaging {
 }
 
 #[derive(Debug, Error)]
-pub enum FirebaseError {
+#[non_exhaustive]
+pub enum FirebaseErrorKind {
     #[error("Failed to authenticate with notification service: {0}")]
     Auth(#[from] gcp_auth::Error),
     #[error("Failed to send push notification: {0}")]
     Request(#[from] reqwest::Error),
+    #[error("API returned error: {0}")]
+    Api(#[from] FCMApiError),
+    #[error("Task failed: {0}")]
+    Task(#[from] tokio::task::JoinError),
+}
+
+#[derive(Debug, Error)]
+pub struct FirebaseError {
+    /// The kind of error that occurred
+    kind: FirebaseErrorKind,
+    /// The request token that caused the error
+    token: Option<String>,
+}
+
+impl FirebaseError {
+    const fn new(kind: FirebaseErrorKind, token: Option<String>) -> Self {
+        Self { kind, token }
+    }
+
+    /// The type of error that occurred
+    pub const fn kind(&self) -> &FirebaseErrorKind {
+        &self.kind
+    }
+
+    /// The request token that belongs to the error
+    pub fn token(&self) -> Option<&str> {
+        self.token.as_deref()
+    }
+}
+
+impl Display for FirebaseError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.kind)
+    }
 }
 
 impl FirebaseMessaging {
@@ -50,7 +117,7 @@ impl FirebaseMessaging {
     ///
     /// If no GCP auth provider was resolved.
     /// This is typically due to a missing `GOOGLE_APPLICATION_CREDENTIALS` environment variable.
-    pub async fn new() -> Result<Self, FirebaseError> {
+    pub async fn new() -> Result<Self, FirebaseErrorKind> {
         let provider = gcp_auth::provider().await?;
         let project_id = provider.project_id().await?.to_string();
 
@@ -95,6 +162,14 @@ impl FirebaseMessaging {
         }
     }
 
+    fn is_retriable_status(status: StatusCode) -> bool {
+        status.is_server_error()
+            || matches!(
+                status,
+                StatusCode::TOO_MANY_REQUESTS | StatusCode::TOO_EARLY | StatusCode::REQUEST_TIMEOUT
+            )
+    }
+
     async fn perform_send(
         http: &reqwest::Client,
         auth_token: impl Into<&str>,
@@ -105,8 +180,9 @@ impl FirebaseMessaging {
     ) -> Result<(), FirebaseError> {
         let auth_token = auth_token.into();
         let project_id = project_id.into();
+        let token = to.into();
         let message = FirebaseMessage {
-            token: to.into(),
+            token,
             notification,
             data,
         };
@@ -131,23 +207,35 @@ impl FirebaseMessaging {
 
             match result {
                 Ok(response) => {
-                    retry_after = response
-                        .headers()
-                        .get("Retry-After")
-                        .and_then(|value| value.to_str().ok().and_then(|value| value.parse::<u64>().ok()));
+                    let is_error = response.status().is_client_error() || response.status().is_server_error();
 
-                    match response.error_for_status() {
-                        Ok(_) => return Ok(()),
-                        Err(err) => {
-                            if attempts >= max_attempts || !Self::is_retriable_error(&err) {
-                                return Err(FirebaseError::Request(err));
-                            }
-                        }
+                    // If we can't retry, bail
+                    if is_error && (attempts >= max_attempts || !Self::is_retriable_status(response.status())) {
+                        let body = response
+                            .json::<FCMApiError>()
+                            .await
+                            .map_err(|e| FirebaseError::new(FirebaseErrorKind::Request(e), Some(token.to_string())))?;
+                        return Err(FirebaseError::new(
+                            FirebaseErrorKind::Api(body),
+                            Some(token.to_string()),
+                        ));
+                    // If we can retry, try extracting the Retry-After header
+                    } else if is_error {
+                        retry_after = response
+                            .headers()
+                            .get("Retry-After")
+                            .and_then(|value| value.to_str().ok().and_then(|value| value.parse::<u64>().ok()));
+                    } else {
+                        return Ok(());
                     }
                 }
+                // Something went wrong with the request itself
                 Err(err) => {
                     if attempts >= max_attempts || !Self::is_retriable_error(&err) {
-                        return Err(FirebaseError::Request(err));
+                        return Err(FirebaseError::new(
+                            FirebaseErrorKind::Request(err),
+                            Some(token.to_string()),
+                        ));
                     }
                 }
             }
@@ -185,11 +273,16 @@ impl FirebaseMessaging {
         notification: Notification,
         data: Option<HashMap<String, String>>,
     ) -> Result<(), FirebaseError> {
+        let token = token.into();
+
         Self::perform_send(
             &self.http,
-            self.get_token().await?.as_str(),
+            self.get_token()
+                .await
+                .map_err(|e| FirebaseError::new(FirebaseErrorKind::Auth(e), Some(token.clone())))?
+                .as_str(),
             &*self.project_id,
-            &*token.into(),
+            &*token,
             &notification,
             data.as_ref(),
         )
@@ -208,15 +301,21 @@ impl FirebaseMessaging {
     /// * `notification` - The notification to send
     /// * `data` - Additional data to send with the notification
     ///
+    /// # Panics
+    ///
+    /// If any of the underlying send tasks panics. (This should not happen)
+    ///
     /// # Errors
     ///
-    /// If any notification could not be sent.
+    /// Returns a list of errors for each token that failed to receive the notification.
+    ///
+    /// You can use [`FirebaseError::token()`] to get the token that caused the error, if any.
     pub async fn send_notification_to_multiple(
         &self,
         tokens: impl IntoIterator<Item = impl Into<String>>,
         notification: Notification,
         data: Option<HashMap<String, String>>,
-    ) -> Result<(), FirebaseError> {
+    ) -> Result<(), Vec<FirebaseError>> {
         let mut peekable = tokens.into_iter().peekable();
 
         if peekable.peek().is_none() {
@@ -224,7 +323,12 @@ impl FirebaseMessaging {
         }
 
         // Spawn n tasks for each token
-        let auth_token: Arc<str> = Arc::from(self.get_token().await?.as_str());
+        let auth_token: Arc<str> = Arc::from(
+            self.get_token()
+                .await
+                .map_err(|e| vec![FirebaseError::new(FirebaseErrorKind::Auth(e), None)])?
+                .as_str(),
+        );
         let project_id: Arc<str> = Arc::from(self.project_id.clone());
         let notification: Arc<Notification> = Arc::new(notification);
         let data: Option<Arc<HashMap<String, String>>> = data.map(Arc::new);
@@ -251,18 +355,20 @@ impl FirebaseMessaging {
         });
 
         // Wait for all tasks to complete
-        let results = futures::future::join_all(tasks).await;
+        let errors = futures::future::join_all(tasks)
+            .await
+            .into_iter()
+            .map(|r| match r {
+                Ok(Ok(())) => Ok(()),
+                Ok(Err(err)) => Err(err),
+                Err(err) => {
+                    assert!(!err.is_panic(), "Task panicked: {err:?}");
+                    Err(FirebaseError::new(FirebaseErrorKind::Task(err), None))
+                }
+            })
+            .filter_map(Result::err)
+            .collect::<Vec<FirebaseError>>();
 
-        // Check if any task failed
-
-        for result in results {
-            match result {
-                Ok(Ok(())) => {}
-                Ok(Err(err)) => return Err(err),
-                Err(err) => assert!(!err.is_panic(), "Task panicked: {err:?}"),
-            }
-        }
-
-        Ok(())
+        if errors.is_empty() { Ok(()) } else { Err(errors) }
     }
 }

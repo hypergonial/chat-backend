@@ -3,10 +3,14 @@ use std::collections::{HashMap, HashSet};
 use chrono::Utc;
 use derive_builder::Builder;
 use itertools::Itertools;
+use sqlx::error::DatabaseError;
 
 use crate::{
     app::Config,
-    external::{Database, FirebaseMessaging, S3Service, fcm::Notification},
+    external::{
+        Database, FirebaseMessaging, S3Service,
+        fcm::{FCMApiError, FCMErrorCode, FirebaseErrorKind, Notification},
+    },
     gateway::handler::{ConnectionId, Gateway, SendMode},
     models::{
         attachment::{Attachment, AttachmentLike, FullAttachment},
@@ -1169,14 +1173,56 @@ impl<'a> Ops<'a> {
             tokens.retain(|id, _v| !connected.contains(id));
         }
 
+        if tokens.is_empty() {
+            return Ok(());
+        }
+
+        tracing::debug!(
+            guild = %guild_id,
+            user_count = %tokens.len(),
+            notification = ?notification,
+            "Sending push notification to inactive users in guild",
+        );
+
         let data = HashMap::from([
             ("type".to_string(), "notification".to_string()),
             ("guild_id".to_string(), guild_id.to_string()),
             ("channel_id".to_string(), originating_channel.into().to_string()),
         ]);
 
-        fcm.send_notification_to_multiple(tokens.into_values().flatten(), notification, Some(data))
-            .await?;
+        if let Err(errors) = fcm
+            .send_notification_to_multiple(tokens.into_values().flatten(), notification, Some(data))
+            .await
+        {
+            let mut invalid_tokens = Vec::new();
+            // Don't count unregistered tokens as errors
+            let mut has_errors = false;
+
+            for error in &errors {
+                if let (
+                    FirebaseErrorKind::Api(FCMApiError {
+                        error_code: FCMErrorCode::Unregistered,
+                    }),
+                    Some(token),
+                ) = (error.kind(), error.token())
+                {
+                    invalid_tokens.push(token.to_string());
+                } else {
+                    has_errors = true;
+                }
+            }
+
+            // Drop all invalid tokens
+            if !invalid_tokens.is_empty() {
+                sqlx::query!("DELETE FROM fcm_tokens WHERE token = ANY($1)", &invalid_tokens)
+                    .execute(self.db)
+                    .await?;
+            }
+
+            if has_errors {
+                return Err(AppError::FirebaseMulti(errors));
+            }
+        }
 
         Ok(())
     }
@@ -1195,12 +1241,12 @@ impl<'a> Ops<'a> {
         &self,
         user: impl Into<Snowflake<User>>,
         payload: UpdateFCMToken,
-    ) -> Result<(), sqlx::Error> {
+    ) -> Result<(), AppError> {
         let user_id = user.into();
 
         let mut tx = self.db.begin().await?;
 
-        sqlx::query!(
+        if let Err(e) = sqlx::query!(
             "INSERT INTO fcm_tokens (user_id, token)
             VALUES ($1, $2)
             ON CONFLICT (user_id) DO NOTHING",
@@ -1208,7 +1254,14 @@ impl<'a> Ops<'a> {
             payload.token,
         )
         .execute(&mut *tx)
-        .await?;
+        .await
+        {
+            if e.as_database_error()
+                .is_some_and(DatabaseError::is_foreign_key_violation)
+            {
+                return Err(AppError::NotFound("User not found".into()));
+            }
+        }
 
         if let Some(prev_token) = payload.previous_token {
             sqlx::query!(

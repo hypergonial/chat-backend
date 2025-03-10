@@ -2,7 +2,7 @@ use axum::{
     Json, Router,
     extract::{Path, State},
     http::StatusCode,
-    routing::{get, patch, post},
+    routing::{get, patch, post, put},
 };
 use secrecy::ExposeSecret;
 use serde_json::{Value, json};
@@ -16,8 +16,7 @@ use crate::{
         errors::RESTError,
         gateway_event::GatewayEvent,
         guild::Guild,
-        request_payloads::CreateUser,
-        request_payloads::UpdateUser,
+        request_payloads::{CreateUser, UpdateFCMToken, UpdateUser},
         user::{Presence, User},
     },
     rest::auth::{generate_hash, validate_credentials},
@@ -29,6 +28,7 @@ pub fn get_router() -> Router<App> {
         .route("/users/auth", get(auth_user))
         .route("/users/@me", get(fetch_self))
         .route("/users/@me/guilds", get(fetch_self_guilds))
+        .route("/users/@me/fcm", put(update_fcm_token))
         .route("/users/@me/presence", patch(update_presence))
         .route("/usernames/{username}", get(query_username))
         .route(
@@ -155,7 +155,7 @@ async fn fetch_self_guilds(State(app): State<App>, token: Token) -> Result<Json<
 ///
 /// PATCH `/users/@me/presence`
 // TODO: Remove this endpoint in favour of sending presence updates over the gateway
-pub async fn update_presence(
+async fn update_presence(
     State(app): State<App>,
     token: Token,
     Json(new_presence): Json<Presence>,
@@ -202,7 +202,7 @@ pub async fn update_presence(
 /// ## Endpoint
 ///
 /// PATCH `/users/@me`
-pub async fn update_self(
+async fn update_self(
     State(app): State<App>,
     token: Token,
     Json(payload): Json<UpdateUser>,
@@ -234,10 +234,39 @@ pub async fn update_self(
 /// ## Endpoint
 ///
 /// GET `/users/{username}`
-pub async fn query_username(State(app): State<App>, Path(username): Path<String>) -> Result<StatusCode, RESTError> {
+async fn query_username(State(app): State<App>, Path(username): Path<String>) -> Result<StatusCode, RESTError> {
     if app.ops().is_username_taken(&username).await? {
         Ok(StatusCode::NO_CONTENT)
     } else {
         Err(RESTError::NotFound("User not found".into()))
     }
+}
+
+/// Update the FCM token for the token-holder. This adds a new FCM token to the user's account.
+///
+/// ## Arguments
+///
+/// * `token` - The user's session token, already validated
+/// * `payload` - The `UpdateFCMToken` payload, containing the new FCM token (and optionally the previous one)
+///
+/// ## Returns
+///
+/// * `204 No Content` - If the update was successful
+///
+/// ## Errors
+///
+/// * [`RESTError::NotFound`] - If the user is not found
+/// * [`RESTError::App`] - If the update operation fails
+///
+/// ## Endpoint
+///
+/// PUT `/users/@me/fcm`
+async fn update_fcm_token(
+    State(app): State<App>,
+    token: Token,
+    Json(payload): Json<UpdateFCMToken>,
+) -> Result<StatusCode, RESTError> {
+    payload.perform_request(&app, token.data().user_id()).await?;
+
+    Ok(StatusCode::NO_CONTENT)
 }

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM fcm_tokens WHERE token = ANY($1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "105ea30787d60ff8eca20fc691c6a583f4947e96820cacd1207a4a6d2e081c12"
+}

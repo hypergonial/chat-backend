@@ -183,3 +183,27 @@ pub struct UpdateFCMToken {
     pub token: String,
     pub previous_token: Option<String>,
 }
+
+impl UpdateFCMToken {
+    /// Perform the update operation
+    ///
+    /// This is a shorthand for `app.ops().update_fcm_token(user, payload).await`
+    ///
+    /// # Parameters
+    ///
+    /// - `app` - The application state
+    /// - `user` - The user to update
+    ///
+    /// # Errors
+    ///
+    /// - [`AppError::NotFound`] if the user does not exist
+    /// - [`AppError::Database`] if the update operation fails
+    #[inline]
+    pub async fn perform_request(
+        self,
+        app: &ApplicationState,
+        user: impl Into<Snowflake<User>>,
+    ) -> Result<(), AppError> {
+        app.ops().update_fcm_token(user, self).await
+    }
+}
