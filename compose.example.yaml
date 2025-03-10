@@ -55,7 +55,7 @@ services:
       - minio_data2-1:/minio_data1
       - minio_data2-2:/minio_data2
 
-  nginx:
+  minio-loadbalancer:
     image: nginx:1.25.1-alpine
     hostname: nginx
     restart: always
@@ -76,21 +76,35 @@ services:
       args:
         - BUILD_TYPE=${BUILD_TYPE:-release}
     environment:
+      # Postgres connection string
       DATABASE_URL: ${DATABASE_URL}
-      SQLX_OFFLINE: true # DB is not running when building the image
-      S3_URL: ${S3_URL:-http://nginx:9000}
+      # DB is not running when building the image
+      SQLX_OFFLINE: true
+      # URL of the S3 instance
+      S3_URL: ${S3_URL:-http://minio-loadbalancer:9000}
+      # S3 credentials
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:?err}
       S3_SECRET_KEY: ${S3_SECRET_KEY:?err}
+      # Remove if not using Firebase for push notifications
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:?err}
+      # MACHINE_ID should be unique per machine
       MACHINE_ID: ${MACHINE_ID:?err}
+      # PROCESS_ID should be unique per process
       PROCESS_ID: ${PROCESS_ID:?err}
+      # Address to listen on, including the port
       LISTEN_ADDR: 0.0.0.0:8080
+      # Random secret for JWT
       APP_SECRET: ${APP_SECRET:?err}
+      # Set this to 1 or "full" to get a backtrace on panic
       RUST_BACKTRACE: ${RUST_BACKTRACE:-0}
     ports:
       - 8080:8080
+    # Change this to the folder that contains the FCM credentials, remove if not using Firebase
+    volumes:
+      - ./config:/config:ro
     depends_on:
       - db
-      - nginx
+      - minio-loadbalancer
     restart: always
     networks:
       - private
@@ -99,6 +113,9 @@ networks:
   private:
     external: false
 
+# NOTE: It is STRONGLY recommended to use at least directories for volumes as persistent data instead.
+# See: https://docs.docker.com/engine/storage/volumes/
+# See: https://docs.docker.com/reference/compose-file/volumes/
 volumes:
   postgres_data:
   minio_data1-1:
