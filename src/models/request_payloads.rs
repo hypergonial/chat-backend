@@ -6,7 +6,7 @@ use crate::app::ApplicationState;
 use super::{
     channel::Channel,
     data_uri::DataUri,
-    errors::AppError,
+    errors::{AppError, RESTError},
     guild::Guild,
     member::Member,
     message::Message,
@@ -198,12 +198,13 @@ impl UpdateFCMToken {
     ///
     /// - [`AppError::NotFound`] if the user does not exist
     /// - [`AppError::Database`] if the update operation fails
+    /// - [`RESTError::Conflict`] if the token already exists
     #[inline]
     pub async fn perform_request(
         self,
         app: &ApplicationState,
         user: impl Into<Snowflake<User>>,
-    ) -> Result<(), AppError> {
+    ) -> Result<(), RESTError> {
         app.ops().update_fcm_token(user, self).await
     }
 }

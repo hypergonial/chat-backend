@@ -1238,12 +1238,14 @@ impl<'a> Ops<'a> {
     ///
     /// ## Errors
     ///
+    /// * [`AppError::NotFound`] - If the user is not found.
+    /// * [`RESTError::Conflict`] - If the token already exists.
     /// * [`sqlx::Error`] - If the database query fails.
     pub async fn update_fcm_token(
         &self,
         user: impl Into<Snowflake<User>>,
         payload: UpdateFCMToken,
-    ) -> Result<(), AppError> {
+    ) -> Result<(), RESTError> {
         let user_id = user.into();
 
         let mut tx = self.db.begin().await?;
@@ -1261,7 +1263,11 @@ impl<'a> Ops<'a> {
             if e.as_database_error()
                 .is_some_and(DatabaseError::is_foreign_key_violation)
             {
-                return Err(AppError::NotFound("User not found".into()));
+                return Err(AppError::NotFound("User not found".into()).into());
+            }
+
+            if e.as_database_error().is_some_and(DatabaseError::is_unique_violation) {
+                return Err(RESTError::Conflict("Token already exists".into()));
             }
         }
 

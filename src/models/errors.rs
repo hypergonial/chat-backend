@@ -316,6 +316,8 @@ pub enum RESTError {
     Forbidden(String),
     #[error("Bad Request: {0}")]
     BadRequest(String),
+    #[error("Conflict: {0}")]
+    Conflict(String),
 }
 
 impl RESTError {
@@ -327,6 +329,7 @@ impl RESTError {
                 StatusCode::BAD_REQUEST
             }
             Self::NotFound(_) => StatusCode::NOT_FOUND,
+            Self::Conflict(_) => StatusCode::CONFLICT,
             Self::Forbidden(_) => StatusCode::FORBIDDEN,
         }
     }
