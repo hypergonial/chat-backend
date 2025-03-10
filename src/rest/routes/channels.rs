@@ -184,7 +184,7 @@ async fn create_message(
     }
 
     let notif = Notification {
-        title: format!("@{} in #{}", username, channel.name()),
+        title: format!("@{} in #{}:", username, channel.name()),
         body: notif_body,
     };
 
