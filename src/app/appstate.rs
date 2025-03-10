@@ -150,7 +150,6 @@ impl ApplicationState {
 
         tokio::spawn(async move {
             loop {
-                tokio::time::sleep(tokio::time::Duration::from_secs(3600 * 24 /* 1 day */)).await;
                 tracing::info!("Clearing stale FCM tokens...");
                 match app.ops().clear_stale_fcm_tokens().await {
                     Ok(count) => {
@@ -160,6 +159,7 @@ impl ApplicationState {
                         tracing::error!("Failed to clear stale FCM tokens: {}", e);
                     }
                 }
+                tokio::time::sleep(tokio::time::Duration::from_secs(3600 * 24 /* 1 day */)).await;
             }
         });
     }
