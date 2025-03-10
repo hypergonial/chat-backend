@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    fmt::{self, Display, Formatter},
+    fmt::{self, Debug, Display, Formatter},
     sync::Arc,
     time::Duration,
 };
@@ -75,12 +75,21 @@ pub enum FirebaseErrorKind {
     Task(#[from] tokio::task::JoinError),
 }
 
-#[derive(Debug, Error)]
+#[derive(Error)]
 pub struct FirebaseError {
     /// The kind of error that occurred
     kind: FirebaseErrorKind,
     /// The request token that caused the error
     token: Option<String>,
+}
+
+impl Debug for FirebaseError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("FirebaseError")
+            .field("kind", &self.kind)
+            .field("token", &self.token.as_deref().map(|_| "<redacted>"))
+            .finish()
+    }
 }
 
 impl FirebaseError {
@@ -211,10 +220,17 @@ impl FirebaseMessaging {
 
                     // If we can't retry, bail
                     if is_error && (attempts >= max_attempts || !Self::is_retriable_status(response.status())) {
-                        let body = response
-                            .json::<FCMApiError>()
-                            .await
-                            .map_err(|e| FirebaseError::new(FirebaseErrorKind::Request(e), Some(token.to_string())))?;
+                        let text = response.text().await.unwrap_or_else(|_| String::new());
+                        tracing::error!("FCM messages:send failed after {} attempts: {}", attempts, text);
+
+                        let body = serde_json::from_str::<FCMApiError>(&text).unwrap_or(FCMApiError {
+                            error_code: FCMErrorCode::Unknown,
+                        });
+
+                        /*let body = response
+                        .json::<FCMApiError>()
+                        .await
+                        .map_err(|e| FirebaseError::new(FirebaseErrorKind::Request(e), Some(token.to_string())))?; */
                         return Err(FirebaseError::new(
                             FirebaseErrorKind::Api(body),
                             Some(token.to_string()),
