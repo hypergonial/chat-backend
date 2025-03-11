@@ -762,7 +762,6 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
- "slice-group-by",
  "sqlx",
  "thiserror 2.0.12",
  "tokio",
@@ -3126,12 +3125,6 @@ checksum = "8f92a496fb766b417c996b9c5e57daf2f7ad3b0bebe1ccfca4856390e3d3bb67"
 dependencies = [
  "autocfg",
 ]
-
-[[package]]
-name = "slice-group-by"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "826167069c09b99d56f31e9ae5c99049e932a98c9dc2dac47645b08dbbf76ba7"
 
 [[package]]
 name = "smallvec"
