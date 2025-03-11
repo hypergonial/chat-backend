@@ -14,7 +14,7 @@ use regex::Regex;
 use serde::Serialize;
 
 use super::snowflake::Snowflake;
-use crate::App;
+use crate::app::App;
 use crate::external::S3Service;
 
 static ATTACH_REGEX: LazyLock<Regex> =

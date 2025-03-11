@@ -1,14 +1,10 @@
 #![allow(async_fn_in_trait)]
 
-pub mod app;
-pub mod external;
-pub mod gateway;
-pub mod models;
-pub mod rest;
-pub mod utils;
-
-use app::{App, ApplicationState};
 use axum::{Router, ServiceExt, extract::Request};
+use chat_backend::{
+    app::{App, ApplicationState},
+    gateway, rest,
+};
 use color_eyre::eyre::Result;
 use mimalloc::MiMalloc;
 use tokio::signal::ctrl_c;

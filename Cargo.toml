@@ -8,6 +8,8 @@ rust-version = "1.85"
 
 [lints.rust]
 unsafe_code = "forbid"
+# This is not really a library
+async_fn_in_trait = "allow"
 
 [lints.clippy]
 enum_glob_use = "deny"
@@ -28,6 +30,7 @@ missing_panics_doc = "allow"
 future_not_send = "allow"
 # Doesn't play nicely with tokio::select!
 redundant_pub_crate = "allow"
+
 
 [dependencies]
 tokio = { version = "1", features = ["full", "parking_lot", "tracing"] }
