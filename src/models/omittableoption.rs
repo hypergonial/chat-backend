@@ -14,7 +14,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 ///
 /// You must annotate the field with the following to make this work correctly, due to serde limitations:
 ///
-/// ```
+/// ```rust, ignore
 /// #[serde(default)]
 /// #[serde(skip_serializing_if = "OmittableOption::is_omitted")]
 /// some_field: OmittableOption<T>
@@ -61,14 +61,16 @@ impl<T> OmittableOption<T> {
     ///
     /// # Example
     ///
-    /// ```
+    /// ```rust
+    /// # use chat_backend::models::omittableoption::OmittableOption;
+    ///
     /// let value = OmittableOption::Some(42);
     ///
     /// let new_value = value.map(|v| v == 10);
     ///
     /// assert_eq!(new_value, OmittableOption::Some(false));
     ///
-    /// let value = OmittableOption::None;
+    /// let value = OmittableOption::<i32>::None;
     ///
     /// let new_value = value.map(|v| v == 10);
     ///
@@ -90,6 +92,18 @@ impl<T, E> OmittableOption<Result<T, E>> {
     /// # Returns
     ///
     /// - The transposed value.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use chat_backend::models::omittableoption::OmittableOption;
+    ///
+    /// let value: OmittableOption<Result<i32, ()>> = OmittableOption::Some(Ok(42));
+    ///
+    /// let transposed = value.transpose();
+    ///
+    /// assert_eq!(transposed, Ok(OmittableOption::Some(42)));
+    /// ```
     #[expect(clippy::missing_errors_doc)]
     pub fn transpose(self) -> Result<OmittableOption<T>, E> {
         match self {

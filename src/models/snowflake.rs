@@ -4,6 +4,7 @@ use std::{
     hash::{Hash, Hasher},
     marker::PhantomData,
     num::ParseIntError,
+    ops::{Add, Div, Mul, Sub},
     str::FromStr,
 };
 
@@ -22,6 +23,13 @@ pub const EPOCH: i64 = 1_672_531_200_000;
 ///
 /// Snowflakes are 64-bit integers that are guaranteed to be unique.
 /// The first 41 bits are a timestamp, the next 10 are a worker ID, and the last 12 are a process ID.
+///
+/// This type is generic over a marker type `T`, which typically indicates the entity type this snowflake identifies.
+/// For example, a `Snowflake<User>` would be used to identify a user.
+/// This is purely for type safety and does not affect the underlying snowflake value.
+///
+/// In the rare instances that you would need to compare snowflakes of different types,
+/// you can use the [`Snowflake::cast`] method to convert between them.
 #[repr(transparent)]
 pub struct Snowflake<T> {
     // Note: We are using i64 instead of u64 because postgres does not support unsigned integers.
@@ -31,6 +39,7 @@ pub struct Snowflake<T> {
 
 impl<T> Snowflake<T> {
     /// Create a new snowflake from a 64-bit integer.
+    #[inline]
     pub const fn new(value: i64) -> Self {
         Self {
             value,
@@ -45,26 +54,31 @@ impl<T> Snowflake<T> {
     }
 
     /// Cast this snowflake to a different marker type.
+    #[inline]
     pub const fn cast<U>(self) -> Snowflake<U> {
         Snowflake::new(self.value)
     }
 
     /// UNIX timestamp representing the time at which this snowflake was created in milliseconds.
+    #[inline]
     pub const fn timestamp(&self) -> i64 {
         (self.value >> 22) + EPOCH
     }
 
     /// Returns the creation time of this snowflake.
+    #[inline]
     pub const fn created_at(&self) -> DateTime<Utc> {
         DateTime::from_timestamp_millis(self.timestamp()).expect("Failed to convert timestamp to DateTime")
     }
 
     /// Returns the worker ID that generated this snowflake.
+    #[inline]
     pub const fn worker_id(&self) -> i64 {
         (self.value & 0x003E_0000) >> 17
     }
 
     /// Returns the process ID that generated this snowflake.
+    #[inline]
     pub const fn process_id(&self) -> i64 {
         (self.value & 0x1F000) >> 12
     }
@@ -79,6 +93,70 @@ impl<T> From<i64> for Snowflake<T> {
 impl<T> From<Snowflake<T>> for i64 {
     fn from(snowflake: Snowflake<T>) -> Self {
         snowflake.value
+    }
+}
+
+impl<T> Add<Self> for Snowflake<T> {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self::new(self.value + rhs.value)
+    }
+}
+
+impl<T> Sub<Self> for Snowflake<T> {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self::new(self.value - rhs.value)
+    }
+}
+
+impl<T> Mul<Self> for Snowflake<T> {
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        Self::new(self.value * rhs.value)
+    }
+}
+
+impl<T> Div<Self> for Snowflake<T> {
+    type Output = Self;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        Self::new(self.value / rhs.value)
+    }
+}
+
+impl<T> Add<i64> for Snowflake<T> {
+    type Output = Self;
+
+    fn add(self, rhs: i64) -> Self::Output {
+        Self::new(self.value + rhs)
+    }
+}
+
+impl<T> Sub<i64> for Snowflake<T> {
+    type Output = Self;
+
+    fn sub(self, rhs: i64) -> Self::Output {
+        Self::new(self.value - rhs)
+    }
+}
+
+impl<T> Mul<i64> for Snowflake<T> {
+    type Output = Self;
+
+    fn mul(self, rhs: i64) -> Self::Output {
+        Self::new(self.value * rhs)
+    }
+}
+
+impl<T> Div<i64> for Snowflake<T> {
+    type Output = Self;
+
+    fn div(self, rhs: i64) -> Self::Output {
+        Self::new(self.value / rhs)
     }
 }
 

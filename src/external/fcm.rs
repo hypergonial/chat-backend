@@ -52,16 +52,19 @@ pub struct GCPError {
 
 impl GCPError {
     /// The HTTP status code of the error.
+    #[inline]
     pub const fn code(&self) -> NonZero<u16> {
         self.error.code
     }
 
     /// The error message.
+    #[inline]
     pub fn message(&self) -> &str {
         &self.error.message
     }
 
     /// The status message of the error.
+    #[inline]
     pub fn status(&self) -> &str {
         &self.error.status
     }
@@ -69,6 +72,7 @@ impl GCPError {
     /// The error details.
     ///
     /// This can be used to determine the specific error(s) that occurred.
+    #[inline]
     pub fn details(&self) -> &[GCPErrorDetail] {
         &self.error.details
     }
@@ -173,11 +177,13 @@ impl FirebaseError {
     }
 
     /// The type of error that occurred
+    #[inline]
     pub const fn kind(&self) -> &FirebaseErrorKind {
         &self.kind
     }
 
     /// The request token that belongs to the error
+    #[inline]
     pub fn token(&self) -> Option<&str> {
         self.token.as_deref()
     }
@@ -226,26 +232,20 @@ impl FirebaseMessaging {
     /// # Errors
     ///
     /// If the token cannot be fetched.
+    #[inline]
     async fn get_token(&self) -> Result<Arc<gcp_auth::Token>, gcp_auth::Error> {
         self.provider.token(&FCM_SCOPES).await
     }
 
     /// Helper function to determine if an error is retriable
+    #[inline]
     fn is_retriable_error(err: &reqwest::Error) -> bool {
-        if let Some(status) = err.status() {
-            if status.is_server_error() {
-                return true;
-            }
-
-            matches!(
-                status,
-                StatusCode::TOO_MANY_REQUESTS | StatusCode::TOO_EARLY | StatusCode::REQUEST_TIMEOUT
-            )
-        } else {
-            err.is_timeout() || err.is_connect()
-        }
+        err.status()
+            .map_or_else(|| err.is_timeout() || err.is_connect(), Self::is_retriable_status)
     }
 
+    /// Helper function to determine if a status code is retriable
+    #[inline]
     fn is_retriable_status(status: StatusCode) -> bool {
         status.is_server_error()
             || matches!(
@@ -355,6 +355,7 @@ impl FirebaseMessaging {
     /// # Errors
     ///
     /// If the notification could not be sent.
+    #[inline]
     pub async fn send_notification(
         &self,
         token: impl Into<String>,

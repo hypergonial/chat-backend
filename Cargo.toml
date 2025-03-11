@@ -89,6 +89,13 @@ mimalloc = "0.1"
 gcp_auth = "0.12.3"
 itertools = "0.14.0"
 
+[dev-dependencies]
+dotenvy_macro = "0.15"
+
+[features]
+# Used to enable/disable tests of the database
+# Run DB tests with `cargo test -F db_tests`
+db_tests = []
 
 [profile.dev.package.sqlx-macros]
 opt-level = 3
