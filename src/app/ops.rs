@@ -9,7 +9,7 @@ use crate::{
     app::Config,
     external::{
         Database, FirebaseMessaging, S3Service,
-        fcm::{FCMApiError, FCMErrorCode, FirebaseErrorKind, Notification},
+        fcm::{FCMErrorCode, FirebaseErrorKind, Notification},
     },
     gateway::handler::{ConnectionId, Gateway, SendMode},
     models::{
@@ -1195,22 +1195,19 @@ impl<'a> Ops<'a> {
             .await
         {
             let mut invalid_tokens = Vec::new();
-            // Don't count unregistered tokens as errors
-            let mut has_errors = false;
 
-            for error in &errors {
-                if let (
-                    FirebaseErrorKind::Api(FCMApiError {
-                        error_code: FCMErrorCode::Unregistered,
-                    }),
-                    Some(token),
-                ) = (error.kind(), error.token())
-                {
-                    invalid_tokens.push(token.to_string());
-                } else {
-                    has_errors = true;
-                }
-            }
+            let actual_errors: Vec<_> = errors
+                .into_iter()
+                .filter(|error| {
+                    if let (FirebaseErrorKind::Api(api_error), Some(token)) = (error.kind(), error.token()) {
+                        if api_error.get_fcm_error_code() == Some(FCMErrorCode::Unregistered) {
+                            invalid_tokens.push(token.to_string());
+                            return false; // Filter out unregistered errors
+                        }
+                    }
+                    true // Keep all other errors
+                })
+                .collect();
 
             // Drop all invalid tokens
             if !invalid_tokens.is_empty() {
@@ -1221,8 +1218,8 @@ impl<'a> Ops<'a> {
 
             tracing::debug!(invalid_token_count = %invalid_tokens.len(), "Removed {} invalid FCM tokens", invalid_tokens.len());
 
-            if has_errors {
-                return Err(AppError::FirebaseMulti(errors));
+            if !actual_errors.is_empty() {
+                return Err(AppError::FirebaseMulti(actual_errors));
             }
         }
 

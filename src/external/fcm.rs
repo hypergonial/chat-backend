@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     fmt::{self, Debug, Display, Formatter},
+    num::NonZero,
     sync::Arc,
     time::Duration,
 };
@@ -28,7 +29,7 @@ pub struct Notification {
     pub body: String,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[non_exhaustive]
 pub enum FCMErrorCode {
@@ -44,14 +45,85 @@ pub enum FCMErrorCode {
     Unknown,
 }
 
-#[derive(Debug, Error, Deserialize, Clone)]
-pub struct FCMApiError {
-    pub error_code: FCMErrorCode,
+#[derive(Debug, Clone, Error, Deserialize)]
+pub struct GCPError {
+    error: GCPErrorInner,
 }
 
-impl Display for FCMApiError {
+impl GCPError {
+    /// The HTTP status code of the error.
+    pub const fn code(&self) -> NonZero<u16> {
+        self.error.code
+    }
+
+    /// The error message.
+    pub fn message(&self) -> &str {
+        &self.error.message
+    }
+
+    /// The status message of the error.
+    pub fn status(&self) -> &str {
+        &self.error.status
+    }
+
+    /// The error details.
+    ///
+    /// This can be used to determine the specific error(s) that occurred.
+    pub fn details(&self) -> &[GCPErrorDetail] {
+        &self.error.details
+    }
+
+    /// Returns the FCM error code if the error is an FCM error.
+    ///
+    /// This is a convenience method that filters the error details for an FCM error code.
+    ///
+    /// # Returns
+    ///
+    /// Returns the FCM error code if the error is an FCM error, otherwise `None`.
+    pub fn get_fcm_error_code(&self) -> Option<FCMErrorCode> {
+        self.error.details.iter().find_map(|detail| match detail {
+            GCPErrorDetail::FcmError { error_code } => Some(*error_code),
+            _ => None,
+        })
+    }
+}
+
+impl Display for GCPError {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "FCM API error: {:?}", self.error_code)
+        write!(f, "{}", self.error)
+    }
+}
+
+#[derive(Debug, Clone, Error, Deserialize)]
+struct GCPErrorInner {
+    code: NonZero<u16>,
+    message: String,
+    status: String,
+    details: Vec<GCPErrorDetail>,
+}
+
+impl Display for GCPErrorInner {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "GCP error - {}: {}", self.code, self.message)
+    }
+}
+
+#[derive(Debug, Clone, Error, Deserialize)]
+#[serde(tag = "@type")]
+#[non_exhaustive]
+pub enum GCPErrorDetail {
+    #[serde(rename = "type.googleapis.com/google.firebase.fcm.v1.FcmError")]
+    FcmError { error_code: FCMErrorCode },
+    #[serde(other)]
+    Unknown,
+}
+
+impl Display for GCPErrorDetail {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::FcmError { error_code } => write!(f, "FCM error: {error_code:?}"),
+            Self::Unknown => write!(f, "Unknown error"),
+        }
     }
 }
 
@@ -70,7 +142,7 @@ pub enum FirebaseErrorKind {
     #[error("Failed to send push notification: {0}")]
     Request(#[from] reqwest::Error),
     #[error("API returned error: {0}")]
-    Api(#[from] FCMApiError),
+    Api(#[from] GCPError),
     #[error("Task failed: {0}")]
     Task(#[from] tokio::task::JoinError),
 }
@@ -220,17 +292,10 @@ impl FirebaseMessaging {
 
                     // If we can't retry, bail
                     if is_error && (attempts >= max_attempts || !Self::is_retriable_status(response.status())) {
-                        let text = response.text().await.unwrap_or_else(|_| String::new());
-                        tracing::error!("FCM messages:send failed after {} attempts: {}", attempts, text);
-
-                        let body = serde_json::from_str::<FCMApiError>(&text).unwrap_or(FCMApiError {
-                            error_code: FCMErrorCode::Unknown,
-                        });
-
-                        /*let body = response
-                        .json::<FCMApiError>()
-                        .await
-                        .map_err(|e| FirebaseError::new(FirebaseErrorKind::Request(e), Some(token.to_string())))?; */
+                        let body = response
+                            .json::<GCPError>()
+                            .await
+                            .map_err(|e| FirebaseError::new(FirebaseErrorKind::Request(e), Some(token.to_string())))?;
                         return Err(FirebaseError::new(
                             FirebaseErrorKind::Api(body),
                             Some(token.to_string()),
