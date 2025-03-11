@@ -113,7 +113,10 @@ impl Display for GCPErrorInner {
 #[non_exhaustive]
 pub enum GCPErrorDetail {
     #[serde(rename = "type.googleapis.com/google.firebase.fcm.v1.FcmError")]
-    FcmError { error_code: FCMErrorCode },
+    FcmError {
+        #[serde(rename = "errorCode")]
+        error_code: FCMErrorCode,
+    },
     #[serde(other)]
     Unknown,
 }
