@@ -216,6 +216,11 @@ impl<K: AvatarKind> FullAvatar<K> {
         self.content = self.bucket(s3).get_object(self.s3_key()).await?;
         Ok(())
     }
+
+    /// Returns the filesize of this avatar in bytes.
+    pub const fn size(&self) -> usize {
+        self.content.len()
+    }
 }
 
 impl<K: AvatarKind> Serialize for FullAvatar<K> {

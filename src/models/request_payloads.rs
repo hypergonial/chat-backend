@@ -88,7 +88,7 @@ impl UpdateGuild {
     ///
     /// Fails if the guild does not exist or the update operation fails
     #[inline]
-    pub async fn perform_request(self, app: &ApplicationState, guild: &Guild) -> Result<Guild, AppError> {
+    pub async fn perform_request(self, app: &ApplicationState, guild: &Guild) -> Result<Guild, RESTError> {
         app.ops().update_guild(self, guild).await
     }
 }
@@ -129,7 +129,7 @@ impl UpdateUser {
         self,
         app: &ApplicationState,
         user: impl Into<Snowflake<User>>,
-    ) -> Result<User, AppError> {
+    ) -> Result<User, RESTError> {
         app.ops().update_user(user, self).await
     }
 }

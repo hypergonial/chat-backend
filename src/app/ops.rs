@@ -210,7 +210,7 @@ impl<'a> Ops<'a> {
             JOIN members mb ON mb.guild_id = c.guild_id AND mb.user_id = $1
             LEFT JOIN read_states r ON r.channel_id = c.id AND r.user_id = $1
             LEFT JOIN LATERAL (
-                SELECT id 
+                SELECT id
                 FROM messages
                 WHERE channel_id = c.id
                 ORDER BY id DESC
@@ -388,7 +388,7 @@ impl<'a> Ops<'a> {
         let records = if around.is_none() {
             sqlx::query_as_unchecked!(
                 ExtendedMessageRecord,
-                "SELECT m.*, users.username, users.display_name, users.avatar_hash, 
+                "SELECT m.*, users.username, users.display_name, users.avatar_hash,
                         attachments.id AS attachment_id, attachments.filename AS attachment_filename, attachments.content_type AS attachment_content_type
                  FROM (
                      SELECT *
@@ -417,7 +417,7 @@ impl<'a> Ops<'a> {
             sqlx::query_as_unchecked!(
                 ExtendedMessageRecord,
                 r#"
-                SELECT m.*, u.username, u.display_name, u.avatar_hash, 
+                SELECT m.*, u.username, u.display_name, u.avatar_hash,
                        a.id AS attachment_id, a.filename AS attachment_filename, a.content_type AS attachment_content_type
                 FROM (
                     (SELECT *
@@ -486,7 +486,7 @@ impl<'a> Ops<'a> {
     pub async fn fetch_members_for(&self, guild: impl Into<Snowflake<Guild>>) -> Result<Vec<Member>, AppError> {
         let records = sqlx::query_as!(
             ExtendedMemberRecord,
-            "SELECT members.*, users.username, users.display_name, users.avatar_hash, users.last_presence 
+            "SELECT members.*, users.username, users.display_name, users.avatar_hash, users.last_presence
             FROM members
             INNER JOIN users ON users.id = members.user_id
             WHERE members.guild_id = $1",
@@ -592,7 +592,7 @@ impl<'a> Ops<'a> {
     ) -> Result<Option<Member>, AppError> {
         let record = sqlx::query_as!(
             ExtendedMemberRecord,
-            "SELECT members.*, users.username, users.display_name, users.avatar_hash, users.last_presence 
+            "SELECT members.*, users.username, users.display_name, users.avatar_hash, users.last_presence
             FROM members
             INNER JOIN users ON users.id = members.user_id
             WHERE members.user_id = $1 AND members.guild_id = $2",
@@ -700,7 +700,7 @@ impl<'a> Ops<'a> {
     /// ## Errors
     ///
     /// * [`sqlx::Error`] - If the database query fails.
-    pub async fn update_guild(&self, payload: UpdateGuild, old_guild: &Guild) -> Result<Guild, AppError> {
+    pub async fn update_guild(&self, payload: UpdateGuild, old_guild: &Guild) -> Result<Guild, RESTError> {
         let mut guild = old_guild.clone();
         let needs_s3_update = guild.update(payload)?;
 
@@ -711,6 +711,12 @@ impl<'a> Ops<'a> {
         if needs_s3_update {
             match guild.avatar() {
                 Some(Avatar::Full(f)) => {
+                    if f.size() > 2 * 1024 * 1024 {
+                        Err(RESTError::PayloadTooLarge(
+                            "Avatar too large, must be 2 MiB or smaller.".into(),
+                        ))?;
+                    }
+
                     self.s3_run(|s3| f.upload(s3)).await?;
                 }
                 Some(Avatar::Partial(_)) => {
@@ -1053,7 +1059,7 @@ impl<'a> Ops<'a> {
     /// ## Returns
     ///
     /// The user if the commit was successful.
-    pub async fn update_user(&self, user: impl Into<Snowflake<User>>, payload: UpdateUser) -> Result<User, AppError> {
+    pub async fn update_user(&self, user: impl Into<Snowflake<User>>, payload: UpdateUser) -> Result<User, RESTError> {
         let user_id = user.into();
 
         let old_user = self
@@ -1070,7 +1076,15 @@ impl<'a> Ops<'a> {
 
         if needs_s3_update {
             match user.avatar() {
-                Some(Avatar::Full(f)) => self.s3_run(|s3| f.upload(s3)).await?,
+                Some(Avatar::Full(f)) => {
+                    if f.size() > 2 * 1024 * 1024 {
+                        return Err(RESTError::PayloadTooLarge(
+                            "Avatar too large, must be 2 MiB or smaller.".into(),
+                        ));
+                    }
+
+                    self.s3_run(|s3| f.upload(s3)).await?;
+                }
                 Some(Avatar::Partial(_)) => {
                     return Err(BuildError::IllegalState("Cannot upload partial avatar".into()).into());
                 }
@@ -1107,8 +1121,8 @@ impl<'a> Ops<'a> {
 
         sqlx::query!(
             "INSERT INTO attachments (id, filename, message_id, channel_id, content_type)
-            VALUES ($1, $2, $3, $4, $5) 
-            ON CONFLICT (id, message_id) 
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (id, message_id)
             DO UPDATE SET filename = $2, content_type = $5",
             i32::from(attachment.id()),
             attachment.filename(),

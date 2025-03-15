@@ -316,6 +316,8 @@ pub enum RESTError {
     Forbidden(String),
     #[error("Bad Request: {0}")]
     BadRequest(String),
+    #[error("Payload Too Large: {0}")]
+    PayloadTooLarge(String),
     #[error("Conflict: {0}")]
     Conflict(String),
 }
@@ -331,6 +333,7 @@ impl RESTError {
             Self::NotFound(_) => StatusCode::NOT_FOUND,
             Self::Conflict(_) => StatusCode::CONFLICT,
             Self::Forbidden(_) => StatusCode::FORBIDDEN,
+            Self::PayloadTooLarge(_) => StatusCode::PAYLOAD_TOO_LARGE,
         }
     }
 }

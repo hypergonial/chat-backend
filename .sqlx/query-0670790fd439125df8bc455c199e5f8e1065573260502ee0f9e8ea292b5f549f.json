@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT members.*, users.username, users.display_name, users.avatar_hash, users.last_presence \n            FROM members\n            INNER JOIN users ON users.id = members.user_id\n            WHERE members.guild_id = $1",
+  "query": "SELECT members.*, users.username, users.display_name, users.avatar_hash, users.last_presence\n            FROM members\n            INNER JOIN users ON users.id = members.user_id\n            WHERE members.guild_id = $1",
   "describe": {
     "columns": [
       {
@@ -60,5 +60,5 @@
       false
     ]
   },
-  "hash": "bd14957069624eb500a49762d7dec3d1dfece2038a953cab99a7228068d9a393"
+  "hash": "0670790fd439125df8bc455c199e5f8e1065573260502ee0f9e8ea292b5f549f"
 }

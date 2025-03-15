@@ -1,10 +1,9 @@
 use axum::{
     Json, Router,
-    extract::{Path, State},
+    extract::{DefaultBodyLimit, Path, State},
     http::StatusCode,
     routing::{delete, get, patch, post},
 };
-use tower_http::limit::RequestBodyLimitLayer;
 
 use crate::{
     app::App,
@@ -34,7 +33,7 @@ pub fn get_router() -> Router<App> {
         .route("/guilds/{guild_id}", delete(delete_guild))
         .route(
             "/guilds/{guild_id}",
-            patch(update_guild).layer(RequestBodyLimitLayer::new(2 * 1024 * 1024 /* 2mb */)),
+            patch(update_guild).layer(DefaultBodyLimit::max(3 * 1024 * 1024 /* 3mb */)),
         )
 }
 

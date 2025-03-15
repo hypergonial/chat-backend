@@ -34,7 +34,7 @@ pub fn get_router() -> Router<App> {
         .route("/usernames/{username}", get(query_username))
         .route(
             "/users/@me",
-            patch(update_self).layer(DefaultBodyLimit::max(2 * 1024 * 1024 /* 2mb */)),
+            patch(update_self).layer(DefaultBodyLimit::max(3 * 1024 * 1024 /* 3mb */)),
         )
 }
 
