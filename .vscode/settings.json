@@ -3,4 +3,5 @@
     "rust-analyzer.server.extraEnv": {
         "CARGO_REGISTRIES_CRATES_IO_PROTOCOL": "sparse"
     },
+    "rust-analyzer.cargo.features": "all",
 }

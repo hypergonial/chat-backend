@@ -465,6 +465,109 @@ impl<'a> Ops<'a> {
         Some(Guild::from_record(record))
     }
 
+    /// Create a new guild
+    ///
+    /// ## Errors
+    ///
+    /// * [`sqlx::Error`] - If the database query fails.
+    ///
+    /// ## Returns
+    ///
+    /// * [`Guild`] - The created guild.
+    /// * [`Channel`] - The general text channel for the guild.
+    /// * [`Member`] - The owner of the guild.
+    ///
+    /// Note: This will also create a general text channel for the guild.
+    pub async fn create_guild(
+        &self,
+        payload: CreateGuild,
+        owner: impl Into<Snowflake<User>>,
+    ) -> Result<(Guild, Channel, Member), sqlx::Error> {
+        let guild = Guild::from_payload(self.config, payload, owner);
+        sqlx::query!(
+            "INSERT INTO guilds (id, name, owner_id)
+            VALUES ($1, $2, $3)",
+            guild.id() as Snowflake<Guild>,
+            guild.name(),
+            guild.owner_id() as Snowflake<User>,
+        )
+        .execute(self.db)
+        .await?;
+
+        let member = self.create_member(&guild, guild.owner_id()).await?;
+
+        let general = TextChannel::new(guild.id().cast(), &guild, "general".to_string()).into();
+        self.create_channel(&general).await?;
+        Ok((guild, general, member))
+    }
+
+    /// Commits the current state of this guild object to the database.
+    ///
+    /// ## Errors
+    ///
+    /// * [`sqlx::Error`] - If the database query fails.
+    pub async fn update_guild(&self, payload: UpdateGuild, old_guild: &Guild) -> Result<Guild, RESTError> {
+        let mut guild = old_guild.clone();
+        let needs_s3_update = guild.update(payload)?;
+
+        if old_guild == &guild {
+            return Ok(guild);
+        }
+
+        if needs_s3_update {
+            match guild.avatar() {
+                Some(Avatar::Full(f)) => {
+                    if f.size() > 2 * 1024 * 1024 {
+                        Err(RESTError::PayloadTooLarge(
+                            "Avatar too large, must be 2 MiB or smaller.".into(),
+                        ))?;
+                    }
+
+                    self.s3_run(|s3| f.upload(s3)).await?;
+                }
+                Some(Avatar::Partial(_)) => {
+                    Err(BuildError::IllegalState("Cannot upload partial avatar".into()))?;
+                }
+                None => {}
+            }
+
+            if let Some(a) = old_guild.avatar() {
+                self.s3_run(|s3| a.delete(s3)).await?;
+            }
+        }
+
+        let record = sqlx::query_as!(
+            GuildRecord,
+            "UPDATE guilds
+            SET name = $2, owner_id = $3, avatar_hash = $4
+            WHERE id = $1 RETURNING *",
+            guild.id() as Snowflake<Guild>,
+            guild.name(),
+            guild.owner_id() as Snowflake<User>,
+            guild.avatar().map(AvatarLike::avatar_hash),
+        )
+        .fetch_one(self.db)
+        .await?;
+        Ok(Guild::from_record(record))
+    }
+
+    /// Deletes the guild.
+    ///
+    /// ## Errors
+    ///
+    /// * [`AppError::S3`] - If the S3 request to delete all attachments fails.
+    /// * [`AppError::Database`] - If the database query fails.
+    pub async fn delete_guild(&self, guild: impl Into<Snowflake<Guild>>) -> Result<(), AppError> {
+        let guild_id: Snowflake<Guild> = guild.into();
+
+        self.s3_run(|s3| s3.remove_all_for_guild(guild_id)).await?;
+
+        sqlx::query!("DELETE FROM guilds WHERE id = $1", guild_id as Snowflake<Guild>)
+            .execute(self.db)
+            .await?;
+        Ok(())
+    }
+
     /// Fetch the owner of the guild.
     ///
     /// ## Errors
@@ -656,109 +759,6 @@ impl<'a> Ops<'a> {
 
         //self.app.ops().update_user(member.user()).await?;
 
-        Ok(())
-    }
-
-    /// Create a new guild
-    ///
-    /// ## Errors
-    ///
-    /// * [`sqlx::Error`] - If the database query fails.
-    ///
-    /// ## Returns
-    ///
-    /// * [`Guild`] - The created guild.
-    /// * [`Channel`] - The general text channel for the guild.
-    /// * [`Member`] - The owner of the guild.
-    ///
-    /// Note: This will also create a general text channel for the guild.
-    pub async fn create_guild(
-        &self,
-        payload: CreateGuild,
-        owner: impl Into<Snowflake<User>>,
-    ) -> Result<(Guild, Channel, Member), sqlx::Error> {
-        let guild = Guild::from_payload(self.config, payload, owner);
-        sqlx::query!(
-            "INSERT INTO guilds (id, name, owner_id)
-            VALUES ($1, $2, $3)",
-            guild.id() as Snowflake<Guild>,
-            guild.name(),
-            guild.owner_id() as Snowflake<User>,
-        )
-        .execute(self.db)
-        .await?;
-
-        let member = self.create_member(&guild, guild.owner_id()).await?;
-
-        let general = TextChannel::new(guild.id().cast(), &guild, "general".to_string()).into();
-        self.create_channel(&general).await?;
-        Ok((guild, general, member))
-    }
-
-    /// Commits the current state of this guild object to the database.
-    ///
-    /// ## Errors
-    ///
-    /// * [`sqlx::Error`] - If the database query fails.
-    pub async fn update_guild(&self, payload: UpdateGuild, old_guild: &Guild) -> Result<Guild, RESTError> {
-        let mut guild = old_guild.clone();
-        let needs_s3_update = guild.update(payload)?;
-
-        if old_guild == &guild {
-            return Ok(guild);
-        }
-
-        if needs_s3_update {
-            match guild.avatar() {
-                Some(Avatar::Full(f)) => {
-                    if f.size() > 2 * 1024 * 1024 {
-                        Err(RESTError::PayloadTooLarge(
-                            "Avatar too large, must be 2 MiB or smaller.".into(),
-                        ))?;
-                    }
-
-                    self.s3_run(|s3| f.upload(s3)).await?;
-                }
-                Some(Avatar::Partial(_)) => {
-                    Err(BuildError::IllegalState("Cannot upload partial avatar".into()))?;
-                }
-                None => {}
-            }
-
-            if let Some(a) = old_guild.avatar() {
-                self.s3_run(|s3| a.delete(s3)).await?;
-            }
-        }
-
-        let record = sqlx::query_as!(
-            GuildRecord,
-            "UPDATE guilds
-            SET name = $2, owner_id = $3, avatar_hash = $4
-            WHERE id = $1 RETURNING *",
-            guild.id() as Snowflake<Guild>,
-            guild.name(),
-            guild.owner_id() as Snowflake<User>,
-            guild.avatar().map(AvatarLike::avatar_hash),
-        )
-        .fetch_one(self.db)
-        .await?;
-        Ok(Guild::from_record(record))
-    }
-
-    /// Deletes the guild.
-    ///
-    /// ## Errors
-    ///
-    /// * [`AppError::S3`] - If the S3 request to delete all attachments fails.
-    /// * [`AppError::Database`] - If the database query fails.
-    pub async fn delete_guild(&self, guild: impl Into<Snowflake<Guild>>) -> Result<(), AppError> {
-        let guild_id: Snowflake<Guild> = guild.into();
-
-        self.s3_run(|s3| s3.remove_all_for_guild(guild_id)).await?;
-
-        sqlx::query!("DELETE FROM guilds WHERE id = $1", guild_id as Snowflake<Guild>)
-            .execute(self.db)
-            .await?;
         Ok(())
     }
 

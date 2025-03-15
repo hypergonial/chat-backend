@@ -44,4 +44,8 @@ impl DBApp {
     pub const fn ops(&self) -> Ops<'_> {
         Ops::new(&self.db, &self.config, None, None, None)
     }
+
+    pub const fn config(&self) -> &Config {
+        &self.config
+    }
 }

@@ -182,6 +182,18 @@ impl<T> Hash for Snowflake<T> {
     }
 }
 
+impl<T> PartialOrd for Snowflake<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.value.cmp(&other.value))
+    }
+}
+
+impl<T> Ord for Snowflake<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.value.cmp(&other.value)
+    }
+}
+
 impl<T> Display for Snowflake<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.value)
