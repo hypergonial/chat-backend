@@ -1,12 +1,11 @@
 use axum::{
     Json, Router,
-    extract::{Path, State},
+    extract::{DefaultBodyLimit, Path, State},
     http::StatusCode,
     routing::{delete, get, patch, post, put},
 };
 use secrecy::ExposeSecret;
 use serde_json::{Value, json};
-use tower_http::limit::RequestBodyLimitLayer;
 
 use crate::{
     app::App,
@@ -35,7 +34,7 @@ pub fn get_router() -> Router<App> {
         .route("/usernames/{username}", get(query_username))
         .route(
             "/users/@me",
-            patch(update_self).layer(RequestBodyLimitLayer::new(2 * 1024 * 1024 /* 2mb */)),
+            patch(update_self).layer(DefaultBodyLimit::max(2 * 1024 * 1024 /* 2mb */)),
         )
 }
 
