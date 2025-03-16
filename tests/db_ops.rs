@@ -1,4 +1,4 @@
-//#![cfg(feature = "db_tests")] // Only runs with `cargo test -F db_tests`
+#![cfg(feature = "db_tests")] // Only runs with `cargo test -F db_tests`
 #![allow(clippy::unwrap_used, clippy::unreadable_literal)]
 
 use chat_backend::models::{
