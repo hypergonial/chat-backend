@@ -1065,7 +1065,7 @@ impl<'a> Ops<'a> {
         let old_user = self
             .fetch_user(user_id)
             .await
-            .ok_or(AppError::NotFound("User not found".into()))?;
+            .ok_or(RESTError::NotFound("User not found".into()))?;
 
         let mut user = old_user.clone();
         let needs_s3_update = user.update(payload)?;
@@ -1117,7 +1117,12 @@ impl<'a> Ops<'a> {
     ///
     /// * [`AppError::S3`] - If the S3 request fails.
     pub async fn create_attachment(&self, attachment: &FullAttachment) -> Result<(), AppError> {
-        self.s3_run(|s3| attachment.upload(s3)).await?;
+        let Some(s3) = self.s3 else {
+            // Ignore if no S3 is configured
+            return Ok(());
+        };
+
+        attachment.upload(s3).await?;
 
         sqlx::query!(
             "INSERT INTO attachments (id, filename, message_id, channel_id, content_type)

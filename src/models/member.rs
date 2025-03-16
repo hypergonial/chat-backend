@@ -69,6 +69,10 @@ impl Member {
         &self.nickname
     }
 
+    pub const fn nickname_mut(&mut self) -> &mut Option<String> {
+        &mut self.nickname
+    }
+
     /// UNIX timestmap of when the user joined the guild
     pub const fn joined_at(&self) -> i64 {
         self.joined_at

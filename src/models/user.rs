@@ -107,13 +107,13 @@ impl User {
     }
 
     /// The user's username. This is unique to the user.
-    pub const fn username(&self) -> &String {
+    pub fn username(&self) -> &str {
         &self.username
     }
 
     /// The user's display name. This is the same as the username unless the user has changed it.
-    pub const fn display_name(&self) -> Option<&String> {
-        self.display_name.as_ref()
+    pub fn display_name(&self) -> Option<&str> {
+        self.display_name.as_deref()
     }
 
     /// The user's display name. This is the same as the username unless the user has changed it.
