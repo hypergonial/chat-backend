@@ -71,15 +71,10 @@ services:
       - private
 
   backend:
-    build:
-      dockerfile: Dockerfile
-      args:
-        - BUILD_TYPE=${BUILD_TYPE:-release}
+    image: ghcr.io/hypergonial/chat-backend:latest
     environment:
       # Postgres connection string
       DATABASE_URL: ${DATABASE_URL}
-      # DB is not running when building the image
-      SQLX_OFFLINE: true
       # URL of the S3 instance
       S3_URL: ${S3_URL:-http://minio-loadbalancer:9000}
       # S3 credentials
