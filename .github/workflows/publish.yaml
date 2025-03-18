@@ -12,6 +12,8 @@ jobs:
     if: github.actor == github.repository_owner
     name: Push to Github Container Registry
     runs-on: ubuntu-latest
+    permissions:
+      packages: write
     steps:
       - name: Setup | Login to GHCR
         uses: docker/login-action@v3
