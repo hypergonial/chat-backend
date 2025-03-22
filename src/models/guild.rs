@@ -104,6 +104,12 @@ impl Guild {
     /// * [`AppError::Build`] - If the avatar data URI is invalid.
     pub fn update(&mut self, payload: UpdateGuild) -> Result<bool, AppError> {
         if let Some(name) = payload.name {
+            if !(3..=32).contains(&name.len()) {
+                return Err(AppError::IllegalArgument(
+                    "Guild name must be between 3 and 32 characters".to_string(),
+                ));
+            }
+
             self.name = name;
         }
         if let Some(owner_id) = payload.owner_id {

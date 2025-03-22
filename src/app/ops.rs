@@ -282,7 +282,13 @@ impl<'a> Ops<'a> {
     /// ## Errors
     ///
     /// * [`sqlx::Error`] - If the database query fails.
-    pub async fn create_channel(&self, channel: &Channel) -> Result<Channel, sqlx::Error> {
+    pub async fn create_channel(&self, channel: &Channel) -> Result<Channel, AppError> {
+        if !(3..=32).contains(&channel.name().len()) {
+            return Err(AppError::IllegalArgument(
+                "Channel name must be between 3 and 32 characters".into(),
+            ));
+        }
+
         sqlx::query_as!(
             ChannelRecord,
             "INSERT INTO channels (id, guild_id, name, channel_type)
@@ -295,6 +301,7 @@ impl<'a> Ops<'a> {
         .fetch_one(self.db)
         .await
         .map(Channel::from_record)
+        .map_err(Into::into)
     }
 
     /// Commit this channel to the database.
@@ -302,7 +309,13 @@ impl<'a> Ops<'a> {
     /// ## Errors
     ///
     /// * [`sqlx::Error`] - If the database query fails.
-    pub async fn update_channel(&self, channel: &Channel) -> Result<(), sqlx::Error> {
+    pub async fn update_channel(&self, channel: &Channel) -> Result<(), AppError> {
+        if (3..=32).contains(&channel.name().len()) {
+            return Err(AppError::IllegalArgument(
+                "Channel name must be between 3 and 32 characters".into(),
+            ));
+        }
+
         sqlx::query!(
             "UPDATE channels SET name = $2 WHERE id = $1",
             channel.id() as Snowflake<Channel>,
@@ -482,7 +495,13 @@ impl<'a> Ops<'a> {
         &self,
         payload: CreateGuild,
         owner: impl Into<Snowflake<User>>,
-    ) -> Result<(Guild, Channel, Member), sqlx::Error> {
+    ) -> Result<(Guild, Channel, Member), AppError> {
+        if !(3..=32).contains(&payload.name.len()) {
+            return Err(AppError::IllegalArgument(
+                "Guild name must be between 3 and 32 characters".to_string(),
+            ));
+        }
+
         let guild = Guild::from_payload(self.config, payload, owner);
         sqlx::query!(
             "INSERT INTO guilds (id, name, owner_id)

@@ -201,6 +201,8 @@ pub enum AppError {
     Axum(#[from] axum::Error),
     #[error("Not Found: {0}")]
     NotFound(String),
+    #[error("Bad Request: {0}")]
+    IllegalArgument(String),
     #[error("Messaging Service Error: {0}")]
     Firebase(#[from] FirebaseError),
     #[error("Messaging Service Error: {0:?}")]
@@ -220,7 +222,7 @@ impl AppError {
                     StatusCode::FORBIDDEN
                 }
             }
-            Self::Regex(_) | Self::ParseInt(_) | Self::JSON(_) => StatusCode::BAD_REQUEST,
+            Self::Regex(_) | Self::ParseInt(_) | Self::JSON(_) | Self::IllegalArgument(_) => StatusCode::BAD_REQUEST,
             Self::Build(e) => e.status_code(),
             Self::Axum(_)
             | Self::Database(_)

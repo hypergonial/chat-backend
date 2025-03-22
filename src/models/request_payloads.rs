@@ -57,7 +57,7 @@ impl CreateGuild {
         self,
         app: &ApplicationState,
         owner: impl Into<Snowflake<User>>,
-    ) -> Result<(Guild, Channel, Member), sqlx::Error> {
+    ) -> Result<(Guild, Channel, Member), AppError> {
         app.ops().create_guild(self, owner).await
     }
 }
