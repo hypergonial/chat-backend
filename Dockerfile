@@ -1,4 +1,4 @@
-FROM lukemathwalker/cargo-chef:latest-rust-1 AS chef
+FROM lukemathwalker/cargo-chef:latest-rust-1.85.1-bookworm AS chef
 WORKDIR /app
 
 # The generated recipe.json should only change if the dependencies changed

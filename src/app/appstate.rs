@@ -52,7 +52,7 @@ impl ApplicationState {
         );
 
         let s3conf = S3Config::builder()
-            .region(Region::new("vault"))
+            .region(Region::new(config.s3_region().clone()))
             .endpoint_url(config.s3_url())
             .credentials_provider(s3creds)
             .force_path_style(true) // MinIO does not support virtual hosts
@@ -206,6 +206,8 @@ impl ApplicationState {
 pub struct Config {
     database_url: Secret<String>,
     s3_url: String,
+    s3_provider_name: String,
+    s3_region: String,
     s3_access_key: Secret<String>,
     s3_secret_key: Secret<String>,
     listen_addr: SocketAddr,
@@ -228,6 +230,14 @@ impl Config {
     /// The URL for the `MinIO` server, an S3-compatible storage backend.
     pub const fn s3_url(&self) -> &String {
         &self.s3_url
+    }
+
+    pub const fn s3_provider_name(&self) -> &String {
+        &self.s3_provider_name
+    }
+
+    pub const fn s3_region(&self) -> &String {
+        &self.s3_region
     }
 
     /// The access key for S3.
@@ -271,6 +281,7 @@ impl Config {
         Self::builder()
             .database_url(std::env::var("DATABASE_URL").expect("DATABASE_URL environment variable must be set"))
             .s3_url(std::env::var("S3_URL").expect("S3_URL environment variable must be set"))
+            .s3_region(std::env::var("S3_REGION").expect("S3_REGION environment variable must be set"))
             .s3_access_key(std::env::var("S3_ACCESS_KEY").expect("S3_ACCESS_KEY environment variable must be set"))
             .s3_secret_key(std::env::var("S3_SECRET_KEY").expect("S3_SECRET_KEY environment variable must be set"))
             .machine_id(
