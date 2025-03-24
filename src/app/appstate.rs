@@ -60,13 +60,10 @@ impl ApplicationState {
             .build();
 
         let s3 = S3Service::new(Client::from_conf(s3conf));
-        let fcm = match FirebaseMessaging::new().await {
+        let fcm = match FirebaseMessaging::new() {
             Ok(fcm) => Some(fcm),
             Err(e) => {
-                tracing::error!(
-                    "Failed to initialize Firebase Messaging: {}\nPush Notifications will be unavailable.",
-                    e
-                );
+                tracing::warn!("Failed to initialize Firebase Messaging - Push Notifications will be unavailable: {e}");
                 None
             }
         };
@@ -138,8 +135,10 @@ impl ApplicationState {
     /// * [`sqlx::Error`] - If the database connection fails.
     async fn init(&mut self) -> Result<(), AppError> {
         self.db.connect(self.config.database_url().expose_secret()).await?;
+        tracing::info!("Database is ready.");
         if let Some(s3) = self.s3.as_mut() {
             s3.create_buckets().await?;
+            tracing::info!("S3 is ready.");
         }
         Ok(())
     }
@@ -206,7 +205,6 @@ impl ApplicationState {
 pub struct Config {
     database_url: Secret<String>,
     s3_url: String,
-    s3_provider_name: String,
     s3_region: String,
     s3_access_key: Secret<String>,
     s3_secret_key: Secret<String>,
@@ -232,10 +230,7 @@ impl Config {
         &self.s3_url
     }
 
-    pub const fn s3_provider_name(&self) -> &String {
-        &self.s3_provider_name
-    }
-
+    /// The region for the S3 bucket.
     pub const fn s3_region(&self) -> &String {
         &self.s3_region
     }
@@ -298,7 +293,7 @@ impl Config {
             )
             .listen_addr(
                 std::env::var("LISTEN_ADDR")
-                    .expect("LISTEN_ADDR environment variable must be set")
+                    .unwrap_or_else(|_| "127.0.0.1:8080".to_string())
                     .parse::<SocketAddr>()
                     .expect("LISTEN_ADDR must be a valid socket address"),
             )

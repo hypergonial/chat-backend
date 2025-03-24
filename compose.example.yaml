@@ -1,6 +1,6 @@
 # Common configuration for all minio instances
 x-minio-common: &minio-common
-  image: minio/minio:latest
+  image: minio/minio:RELEASE.2025-03-12T18-04-18Z
   command: server --console-address ":9001" http://minio{1...2}/minio_data{1...2}
   expose:
     - 9000
@@ -24,7 +24,7 @@ x-minio-common: &minio-common
 
 services:
   db:
-    image: postgres:14
+    image: postgres:17
     restart: always
     expose:
       - 5432
@@ -35,7 +35,7 @@ services:
       POSTGRES_PORT: ${POSTGRES_PORT:-5432}
 
     volumes:
-      - "${DATA_PATH:?err}/postgres:/var/lib/postgresql/data"
+      - "${POSTGRES_DATA_PATH:?err}:/var/lib/postgresql/data"
     networks:
       - private
 
@@ -44,19 +44,19 @@ services:
     hostname: minio1
     restart: always
     volumes:
-      - "${DATA_PATH:?err}/minio/minio1_1:/minio_data1"
-      - "${DATA_PATH:?err}/minio/minio1_2:/minio_data2"
+      - "${MINIO1_1_DATA_PATH:?err}:/minio_data1"
+      - "${MINIO1_2_DATA_PATH:?err}:/minio_data2"
 
   minio2:
     <<: *minio-common
     hostname: minio2
     restart: always
     volumes:
-      - "${DATA_PATH:?err}/minio/minio2_1:/minio_data1"
-      - "${DATA_PATH:?err}/minio/minio2_2:/minio_data2"
+      - "${MINIO2_1_DATA_PATH:?err}:/minio_data1"
+      - "${MINIO1_2_DATA_PATH:?err}:/minio_data2"
 
   minio-loadbalancer:
-    image: nginx:1.25.1-alpine
+    image: nginx:1.27.4-alpine
     hostname: nginx
     restart: always
     volumes:
@@ -73,6 +73,8 @@ services:
   backend:
     image: ghcr.io/hypergonial/chat-backend:latest
     environment:
+      # Address to listen on, including the port
+      LISTEN_ADDR: 0.0.0.0:8080
       # Postgres connection string
       DATABASE_URL: ${DATABASE_URL}
       # URL of the S3 instance
@@ -88,15 +90,12 @@ services:
       MACHINE_ID: ${MACHINE_ID:?err}
       # PROCESS_ID should be unique per process
       PROCESS_ID: ${PROCESS_ID:?err}
-      # Address to listen on, including the port
-      LISTEN_ADDR: 0.0.0.0:8080
       # Random secret for JWT
       APP_SECRET: ${APP_SECRET:?err}
       # Set this to 1 or "full" to get a backtrace on panic
       RUST_BACKTRACE: ${RUST_BACKTRACE:-0}
     ports:
       - 8080:8080
-    # Remove if not using Firebase for push notifications
     volumes:
       - "${CONFIG_PATH:?err}:/config:ro"
     depends_on:

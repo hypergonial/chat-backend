@@ -8,6 +8,7 @@ RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS builder
 ARG BUILD_TYPE=release
+ENV SQLX_OFFLINE=true
 # Build dependencies - this is cached
 COPY --from=planner /app/recipe.json recipe.json
 RUN <<EOF

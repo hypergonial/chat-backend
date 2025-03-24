@@ -31,6 +31,7 @@ impl DBApp {
                 .s3_url(String::new())
                 .s3_access_key(Secret::new(String::new()))
                 .s3_secret_key(Secret::new(String::new()))
+                .s3_region(String::new())
                 .listen_addr("127.0.0.1:8080".parse::<SocketAddr>().expect("Not valid SocketAddr"))
                 .machine_id(0)
                 .process_id(0)

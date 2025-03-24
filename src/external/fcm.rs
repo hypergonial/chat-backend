@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use gcp_auth;
+use gcp_auth::{self, CustomServiceAccount};
 use http::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -207,12 +207,19 @@ impl FirebaseMessaging {
     ///
     /// If no GCP auth provider was resolved.
     /// This is typically due to a missing `GOOGLE_APPLICATION_CREDENTIALS` environment variable.
-    pub async fn new() -> Result<Self, FirebaseErrorKind> {
-        let provider = gcp_auth::provider().await?;
-        let project_id = provider.project_id().await?.to_string();
+    pub fn new() -> Result<Self, FirebaseErrorKind> {
+        let provider = CustomServiceAccount::from_env()?.ok_or(FirebaseErrorKind::Auth(gcp_auth::Error::Str(
+            "No GOOGLE_APPLICATION_CREDENTIALS was set.",
+        )))?;
+        let project_id = provider
+            .project_id()
+            .ok_or(FirebaseErrorKind::Auth(gcp_auth::Error::Str(
+                "No project_id was found in GCP service account configuration file.",
+            )))?
+            .to_string();
 
         Ok(Self {
-            provider,
+            provider: Arc::new(provider),
             project_id,
             http: Arc::new(
                 reqwest::Client::builder()
