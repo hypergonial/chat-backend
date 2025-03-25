@@ -1,6 +1,7 @@
 pub mod attachment;
 pub mod auth;
 pub mod avatar;
+pub mod capability;
 pub mod channel;
 pub mod data_uri;
 pub mod errors;

@@ -15,6 +15,7 @@ use crate::{
     models::{
         attachment::{Attachment, AttachmentLike, FullAttachment},
         avatar::{Avatar, AvatarLike},
+        capability::Capability,
         channel::{Channel, ChannelLike, ChannelRecord, TextChannel},
         errors::{AppError, BuildError, GatewayError, RESTError},
         gateway_event::{GatewayEvent, GatewayMessage, ReadStateEntry},
@@ -79,6 +80,20 @@ impl<'a> Ops<'a> {
         f: impl FnOnce(&'s S3Service) -> F,
     ) -> Result<(), AppError> {
         if let Some(s3) = self.s3 { f(s3).await } else { Ok(()) }
+    }
+
+    pub fn get_capabilities(&self) -> Capability {
+        let mut capabilities = Capability::empty();
+
+        if self.s3.is_some() {
+            capabilities |= Capability::S3;
+        }
+
+        if self.fcm.is_some() {
+            capabilities |= Capability::PUSH_NOTIFICATIONS;
+        }
+
+        capabilities
     }
 
     /// Called when a message is received from a gateway connection.
@@ -310,7 +325,7 @@ impl<'a> Ops<'a> {
     ///
     /// * [`sqlx::Error`] - If the database query fails.
     pub async fn update_channel(&self, channel: &Channel) -> Result<(), AppError> {
-        if (3..=32).contains(&channel.name().len()) {
+        if !(3..=32).contains(&channel.name().len()) {
             return Err(AppError::IllegalArgument(
                 "Channel name must be between 3 and 32 characters".into(),
             ));

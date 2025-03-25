@@ -1,7 +1,8 @@
 use std::time::Duration;
 
-use axum::Router;
+use axum::{Json, Router, extract::State, routing::get};
 use http::{Method, header};
+use serde_json::{Value, json};
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::app::App;
@@ -38,5 +39,12 @@ pub fn get_router() -> Router<App> {
         .merge(get_guild_router())
         .merge(get_user_router())
         .merge(get_prefs_router())
+        .route("/", get(get_api_root))
         .layer(cors)
+}
+
+async fn get_api_root(State(app): State<App>) -> Json<Value> {
+    Json(json!({
+        "capabilities": app.ops().get_capabilities(),
+    }))
 }

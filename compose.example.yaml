@@ -55,7 +55,7 @@ services:
       - "${MINIO2_1_DATA_PATH:?err}:/minio_data1"
       - "${MINIO1_2_DATA_PATH:?err}:/minio_data2"
 
-  minio-loadbalancer:
+  minio:
     image: nginx:1.27.4-alpine
     hostname: nginx
     restart: always
@@ -78,14 +78,14 @@ services:
       # Postgres connection string
       DATABASE_URL: ${DATABASE_URL}
       # URL of the S3 instance
-      S3_URL: ${S3_URL:-http://minio-loadbalancer:9000}
+      S3_URL: ${S3_URL:-http://minio:9000}
       # S3 region
       S3_REGION: ${S3_REGION:?err}
       # S3 credentials
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:?err}
       S3_SECRET_KEY: ${S3_SECRET_KEY:?err}
       # Remove if not using Firebase for push notifications
-      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:?err}
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-/config/firebase.json}
       # MACHINE_ID should be unique per machine
       MACHINE_ID: ${MACHINE_ID:?err}
       # PROCESS_ID should be unique per process
@@ -100,7 +100,7 @@ services:
       - "${CONFIG_PATH:?err}:/config:ro"
     depends_on:
       - db
-      - minio-loadbalancer
+      - minio
     restart: always
     networks:
       - private
