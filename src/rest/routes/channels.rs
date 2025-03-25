@@ -173,6 +173,12 @@ async fn create_message(
         }
     }
 
+    if message.content().is_none() && message.attachments().is_empty() {
+        return Err(RESTError::BadRequest(
+            "Message content or attachments must be provided.".into(),
+        ));
+    }
+
     app.ops().commit_message(&message).await?;
 
     let message = message.strip_attachment_contents();
@@ -257,6 +263,10 @@ async fn update_message(
         return Err(RESTError::NotFound(
             "Message does not exist or is not available.".into(),
         ));
+    }
+
+    if payload.content.is_none() && message.attachments().is_empty() {
+        return Err(RESTError::BadRequest("Message content must be provided.".into()));
     }
 
     let channel = app.ops().fetch_channel(channel_id).await.ok_or(RESTError::NotFound(
