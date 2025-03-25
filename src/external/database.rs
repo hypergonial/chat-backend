@@ -1,6 +1,6 @@
 use std::sync::{Arc, Weak};
 
-use sqlx::{Executor, migrate, postgres::PgPool};
+use sqlx::{Executor, migrate, pool::PoolOptions, postgres::PgPool};
 
 use crate::app::ApplicationState;
 
@@ -77,7 +77,14 @@ impl Database {
             }
         }
 
-        self.pool = Some(PgPool::connect(url).await?);
+        self.pool = Some(
+            PoolOptions::<sqlx::Postgres>::new()
+                .min_connections(2)
+                .max_connections(50)
+                .test_before_acquire(false)
+                .connect(url)
+                .await?,
+        );
         migrate!("./migrations").run(self.pool()).await?;
         Ok(())
     }

@@ -813,6 +813,45 @@ impl<'a> Ops<'a> {
         Ok(Message::from_records(records)?.pop())
     }
 
+    /// Retrieve a message from the given channel and fetch its author from the database in one query.
+    /// Attachment contents will not be retrieved from S3.
+    ///
+    /// ## Arguments
+    ///
+    /// * `message` - The ID of the message to retrieve.
+    ///
+    /// ## Returns
+    ///
+    /// The message if found, otherwise `None`.
+    ///
+    /// ## Errors
+    ///
+    /// * [`AppError::Database`] - If the database query fails.
+    /// * [`AppError::Build`] - If the message is malformed.
+    pub async fn fetch_message_in(
+        &self,
+        channel: impl Into<Snowflake<Channel>>,
+        message: impl Into<Snowflake<Message>>,
+    ) -> Result<Option<Message>, AppError> {
+        let channel_id = channel.into();
+        let message_id = message.into();
+
+        let records = sqlx::query_as_unchecked!(
+            ExtendedMessageRecord,
+            "SELECT messages.*, users.username, users.display_name, users.avatar_hash, attachments.id AS attachment_id, attachments.filename AS attachment_filename, attachments.content_type AS attachment_content_type
+            FROM messages
+            LEFT JOIN users ON messages.user_id = users.id
+            LEFT JOIN attachments ON messages.id = attachments.message_id
+            WHERE messages.id = $1 AND messages.channel_id = $2",
+            message_id as Snowflake<Message>,
+            channel_id as Snowflake<Channel>
+        )
+        .fetch_all(self.db)
+        .await?;
+
+        Ok(Message::from_records(records)?.pop())
+    }
+
     /// Commit this message to the database. Uploads all attachments to S3.
     /// It is highly recommended to call [`Message::strip_attachment_contents`] after calling
     /// this method to remove the attachment contents from memory.

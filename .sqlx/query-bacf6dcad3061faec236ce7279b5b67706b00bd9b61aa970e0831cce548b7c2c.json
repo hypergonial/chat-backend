@@ -1,0 +1,83 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT messages.*, users.username, users.display_name, users.avatar_hash, attachments.id AS attachment_id, attachments.filename AS attachment_filename, attachments.content_type AS attachment_content_type\n            FROM messages\n            LEFT JOIN users ON messages.user_id = users.id\n            LEFT JOIN attachments ON messages.id = attachments.message_id\n            WHERE messages.id = $1 AND messages.channel_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "channel_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "content",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "edited",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "username",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "display_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "avatar_hash",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "attachment_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "attachment_filename",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "attachment_content_type",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "bacf6dcad3061faec236ce7279b5b67706b00bd9b61aa970e0831cce548b7c2c"
+}

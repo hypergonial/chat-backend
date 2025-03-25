@@ -255,15 +255,13 @@ async fn update_message(
         }
     }
 
-    let message = app.ops().fetch_message(message_id).await?.ok_or(RESTError::NotFound(
-        "Message does not exist or is not available.".into(),
-    ))?;
-
-    if message.channel_id() != channel_id {
-        return Err(RESTError::NotFound(
+    let message = app
+        .ops()
+        .fetch_message_in(channel_id, message_id)
+        .await?
+        .ok_or(RESTError::NotFound(
             "Message does not exist or is not available.".into(),
-        ));
-    }
+        ))?;
 
     if payload.content.is_none() && message.attachments().is_empty() {
         return Err(RESTError::BadRequest("Message content must be provided.".into()));
@@ -316,19 +314,17 @@ async fn delete_message(
     State(app): State<App>,
     token: Token,
 ) -> Result<StatusCode, RESTError> {
-    let message = app.ops().fetch_message(message_id).await?.ok_or(RESTError::NotFound(
-        "Message does not exist or is not available.".into(),
-    ))?;
+    let message = app
+        .ops()
+        .fetch_message_in(channel_id, message_id)
+        .await?
+        .ok_or(RESTError::NotFound(
+            "Message does not exist or is not available.".into(),
+        ))?;
 
     let channel = app.ops().fetch_channel(channel_id).await.ok_or(RESTError::NotFound(
         "Channel does not exist or is not available.".into(),
     ))?;
-
-    if message.channel_id() != channel_id {
-        return Err(RESTError::NotFound(
-            "Message does not exist or is not available.".into(),
-        ));
-    }
 
     let member = app
         .ops()
