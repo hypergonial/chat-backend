@@ -64,6 +64,11 @@ async fn main() -> Result<()> {
     /* console_subscriber::init(); */
     tracing::subscriber::set_global_default(subscriber).expect("Failed to set subscriber");
 
+    // gcp_auth requires a TLS provider to be installed
+    rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .expect("Failed to install default TLS crypto provider.");
+
     // Initialize the application state
     let state = ApplicationState::from_env().await?;
     state.spawn_background_tasks();
