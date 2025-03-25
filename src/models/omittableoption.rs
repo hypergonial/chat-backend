@@ -84,6 +84,153 @@ impl<T> OmittableOption<T> {
             Self::Omitted => OmittableOption::Omitted,
         }
     }
+
+    /// Map the inner value to a new value using the provided function, or return the provided
+    /// default value if the value is `None` or `Omitted`.
+    ///
+    /// # Parameters
+    ///
+    /// - `default` - The default value to return if the value is `None` or `Omitted`.
+    /// - `f` - The function to apply to the inner value.
+    ///
+    /// # Returns
+    ///
+    /// The result of applying the function to the inner value if the value is `Some`, otherwise the
+    /// provided default value.
+    #[must_use]
+    pub fn map_or<U>(self, default: U, f: impl FnOnce(T) -> U) -> U {
+        match self {
+            Self::Some(value) => f(value),
+            Self::None | Self::Omitted => default,
+        }
+    }
+
+    /// Unwrap the value, panicking if the value is `None` or `Omitted`.
+    ///
+    /// # Returns
+    ///
+    /// The inner value.
+    ///
+    /// # Panics
+    ///
+    /// If the value is `None` or `Omitted`.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use chat_backend::models::omittableoption::OmittableOption;
+    ///
+    /// let value = OmittableOption::Some(42);
+    ///
+    /// let unwrapped = value.unwrap();
+    ///
+    /// assert_eq!(unwrapped, 42);
+    /// ```
+    #[must_use]
+    pub fn unwrap(self) -> T {
+        match self {
+            Self::Some(value) => value,
+            Self::None => panic!("Called `unwrap` on a `None` value"),
+            Self::Omitted => panic!("Called `unwrap` on an `Omitted` value"),
+        }
+    }
+
+    /// Unwrap the value, panicking with the provided message if the value is `None` or `Omitted`.
+    ///
+    /// # Parameters
+    ///
+    /// - `msg` - The message to include in the panic message.
+    ///
+    /// # Returns
+    ///
+    /// The inner value.
+    ///
+    /// # Panics
+    ///
+    /// If the value is `None` or `Omitted`.
+    #[must_use]
+    pub fn expect(self, msg: &str) -> T {
+        match self {
+            Self::Some(value) => value,
+            Self::None => panic!("{}", msg),
+            Self::Omitted => panic!("{}", msg),
+        }
+    }
+
+    /// Unwrap the value, returning the provided default value if the value is `None` or `Omitted`.
+    ///
+    /// # Parameters
+    ///
+    /// - `default` - The default value to return if the value is `None` or `Omitted`.
+    ///
+    /// # Returns
+    ///
+    /// The inner value if the value is `Some`, otherwise the provided default value.
+    #[must_use]
+    pub fn unwrap_or(self, default: T) -> T {
+        match self {
+            Self::Some(value) => value,
+            Self::None | Self::Omitted => default,
+        }
+    }
+
+    /// Unwrap the value, returning the result of the provided function if the value is `None` or
+    /// `Omitted`.
+    ///
+    /// # Parameters
+    ///
+    /// - `f` - The function to call if the value is `None` or `Omitted`.
+    ///
+    /// # Returns
+    ///
+    /// The inner value if the value is `Some`, otherwise the result of calling the provided
+    /// function.
+    #[must_use]
+    pub fn unwrap_or_else(self, f: impl FnOnce() -> T) -> T {
+        match self {
+            Self::Some(value) => value,
+            Self::None | Self::Omitted => f(),
+        }
+    }
+}
+
+impl<T: Default> OmittableOption<T> {
+    /// Unwrap the value, returning the default value if the value is `None` or `Omitted`.
+    ///
+    /// # Returns
+    ///
+    /// The inner value if the value is `Some`, otherwise the default value of `T`.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use chat_backend::models::omittableoption::OmittableOption;
+    ///
+    /// let value = OmittableOption::Some(42);
+    ///
+    /// let unwrapped = value.unwrap_or_default();
+    ///
+    /// assert_eq!(unwrapped, 42);
+    ///
+    /// let value = OmittableOption::<i32>::None;
+    ///
+    /// let unwrapped = value.unwrap_or_default();
+    ///
+    /// assert_eq!(unwrapped, 0);
+    ///
+    /// let value = OmittableOption::<i32>::Omitted;
+    ///
+    /// let unwrapped = value.unwrap_or_default();
+    ///
+    /// assert_eq!(unwrapped, 0);
+    /// ```
+    #[must_use]
+    pub fn unwrap_or_default(self) -> T {
+        match self {
+            Self::Some(value) => value,
+            Self::None | Self::Omitted => Default::default(),
+        }
+    }
 }
 
 impl<T, E> OmittableOption<Result<T, E>> {

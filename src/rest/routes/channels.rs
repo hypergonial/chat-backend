@@ -17,6 +17,7 @@ use crate::{
         gateway_event::GatewayEvent,
         member::UserLike,
         message::Message,
+        omittableoption::OmittableOption,
         request_payloads::UpdateMessage,
         snowflake::Snowflake,
     },
@@ -164,6 +165,14 @@ async fn create_message(
 
     let message = Message::from_formdata(&app.config, UserLike::Member(member), channel_id, payload).await?;
 
+    if let Some(content) = message.content() {
+        if content.is_empty() {
+            return Err(RESTError::BadRequest("Message content cannot be empty.".into()));
+        } else if content.len() > 2000 {
+            return Err(RESTError::BadRequest("Message content is too long.".into()));
+        }
+    }
+
     app.ops().commit_message(&message).await?;
 
     let message = message.strip_attachment_contents();
@@ -232,6 +241,14 @@ async fn update_message(
     token: Token,
     Json(payload): Json<UpdateMessage>,
 ) -> Result<Json<Message>, RESTError> {
+    if let OmittableOption::Some(ref content) = payload.content {
+        if content.is_empty() {
+            return Err(RESTError::BadRequest("Message content cannot be empty.".into()));
+        } else if content.len() > 2000 {
+            return Err(RESTError::BadRequest("Message content is too long.".into()));
+        }
+    }
+
     let message = app.ops().fetch_message(message_id).await?.ok_or(RESTError::NotFound(
         "Message does not exist or is not available.".into(),
     ))?;

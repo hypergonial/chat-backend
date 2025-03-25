@@ -220,7 +220,8 @@ impl Message {
     ///
     /// - `payload` - The update message payload
     pub fn apply_update(&mut self, payload: UpdateMessage) {
-        if let Ok(content) = Option::try_from(payload.content) {
+        if let Ok(mut content) = Option::try_from(payload.content) {
+            content = content.map(|c: String| c.trim().to_string());
             self.edited = self.content != content;
             self.content = content;
         }
@@ -250,7 +251,9 @@ impl Message {
                     return Err(RESTError::MalformedField("json".to_string()));
                 };
                 let payload = serde_json::from_slice::<CreateMessage>(&data)?;
-                builder.content(payload.content).nonce(payload.nonce.clone());
+                builder
+                    .content(payload.content.map(|c| c.trim().to_string()))
+                    .nonce(payload.nonce.clone());
             } else {
                 let attachment = FullAttachment::try_from_field(part, channel_id, id).await?;
 
