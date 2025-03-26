@@ -43,23 +43,34 @@ impl ApplicationState {
     pub async fn from_env() -> Result<Arc<Self>, AppError> {
         let config = Config::from_env();
 
-        let s3creds = S3Creds::new(
-            config.s3_access_key().expose_secret(),
-            config.s3_secret_key().expose_secret(),
-            None,
-            None,
-            "chat",
-        );
+        let s3 = {
+            config.s3_config().map_or_else(
+                || {
+                    tracing::warn!("S3 not configured - File uploads will be unavailable.");
+                    None
+                },
+                |s3_config| {
+                    let s3creds = S3Creds::new(
+                        s3_config.access_key().expose_secret(),
+                        s3_config.secret_key().expose_secret(),
+                        None,
+                        None,
+                        "chat",
+                    );
 
-        let s3conf = S3Config::builder()
-            .region(Region::new(config.s3_region().clone()))
-            .endpoint_url(config.s3_url())
-            .credentials_provider(s3creds)
-            .force_path_style(true) // MinIO does not support virtual hosts
-            .behavior_version(BehaviorVersion::v2025_01_17())
-            .build();
+                    let s3conf = S3Config::builder()
+                        .region(Region::new(s3_config.region().to_string()))
+                        .endpoint_url(s3_config.url())
+                        .credentials_provider(s3creds)
+                        .force_path_style(true) // MinIO does not support virtual hosts
+                        .behavior_version(BehaviorVersion::v2025_01_17())
+                        .build();
 
-        let s3 = S3Service::new(Client::from_conf(s3conf));
+                    Some(S3Service::new(Client::from_conf(s3conf)))
+                },
+            )
+        };
+
         let fcm = match FirebaseMessaging::new() {
             Ok(fcm) => Some(fcm),
             Err(e) => {
@@ -73,7 +84,7 @@ impl ApplicationState {
             gateway: Gateway::new(),
             fcm,
             config,
-            s3: Some(s3),
+            s3,
         };
 
         state.init().await?;
@@ -199,15 +210,75 @@ impl ApplicationState {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct S3EnvConfig {
+    url: String,
+    region: String,
+    access_key: Secret<String>,
+    secret_key: Secret<String>,
+}
+impl S3EnvConfig {
+    pub const fn new(url: String, region: String, access_key: Secret<String>, secret_key: Secret<String>) -> Self {
+        Self {
+            url,
+            region,
+            access_key,
+            secret_key,
+        }
+    }
+
+    /// The URL of the S3 instance.
+    pub fn url(&self) -> &str {
+        &self.url
+    }
+
+    /// The region of the S3 instance to connect to.
+    pub fn region(&self) -> &str {
+        &self.region
+    }
+
+    /// The access key for the S3 instance.
+    pub const fn access_key(&self) -> &Secret<String> {
+        &self.access_key
+    }
+
+    /// The secret key for the S3 instance.
+    pub const fn secret_key(&self) -> &Secret<String> {
+        &self.secret_key
+    }
+
+    /// Try to resolve the S3 configuration from environment variables.
+    fn from_env() -> Option<Self> {
+        let get_env_var = |name: &str| -> Option<String> {
+            std::env::var(name).ok().map_or_else(
+                || {
+                    tracing::warn!("{} environment variable not set", name);
+                    None
+                },
+                Some,
+            )
+        };
+
+        let url = get_env_var("S3_URL")?;
+        let region = get_env_var("S3_REGION")?;
+        let access_key = get_env_var("S3_ACCESS_KEY").map(Secret::new)?;
+        let secret_key = get_env_var("S3_SECRET_KEY").map(Secret::new)?;
+
+        Some(Self {
+            url,
+            region,
+            access_key,
+            secret_key,
+        })
+    }
+}
+
 /// Application configuration
 #[derive(Debug, Clone, Builder)]
 #[builder(setter(into), build_fn(error = "BuildError"))]
 pub struct Config {
     database_url: Secret<String>,
-    s3_url: String,
-    s3_region: String,
-    s3_access_key: Secret<String>,
-    s3_secret_key: Secret<String>,
+    s3_config: Option<S3EnvConfig>,
     listen_addr: SocketAddr,
     machine_id: i32,
     process_id: i32,
@@ -226,23 +297,8 @@ impl Config {
     }
 
     /// The URL for the `MinIO` server, an S3-compatible storage backend.
-    pub const fn s3_url(&self) -> &String {
-        &self.s3_url
-    }
-
-    /// The region for the S3 bucket.
-    pub const fn s3_region(&self) -> &String {
-        &self.s3_region
-    }
-
-    /// The access key for S3.
-    pub const fn s3_access_key(&self) -> &Secret<String> {
-        &self.s3_access_key
-    }
-
-    /// The secret key for S3.
-    pub const fn s3_secret_key(&self) -> &Secret<String> {
-        &self.s3_secret_key
+    pub const fn s3_config(&self) -> Option<&S3EnvConfig> {
+        self.s3_config.as_ref()
     }
 
     /// The machine id.
@@ -275,10 +331,7 @@ impl Config {
         dotenv().ok();
         Self::builder()
             .database_url(std::env::var("DATABASE_URL").expect("DATABASE_URL environment variable must be set"))
-            .s3_url(std::env::var("S3_URL").expect("S3_URL environment variable must be set"))
-            .s3_region(std::env::var("S3_REGION").expect("S3_REGION environment variable must be set"))
-            .s3_access_key(std::env::var("S3_ACCESS_KEY").expect("S3_ACCESS_KEY environment variable must be set"))
-            .s3_secret_key(std::env::var("S3_SECRET_KEY").expect("S3_SECRET_KEY environment variable must be set"))
+            .s3_config(S3EnvConfig::from_env())
             .machine_id(
                 std::env::var("MACHINE_ID")
                     .expect("MACHINE_ID environment variable must be set")
