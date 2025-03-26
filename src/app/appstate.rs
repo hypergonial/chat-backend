@@ -250,13 +250,17 @@ impl S3EnvConfig {
     /// Try to resolve the S3 configuration from environment variables.
     fn from_env() -> Option<Self> {
         let get_env_var = |name: &str| -> Option<String> {
-            std::env::var(name).ok().map_or_else(
-                || {
+            match std::env::var(name).ok() {
+                None => {
                     tracing::warn!("{} environment variable not set", name);
                     None
-                },
-                Some,
-            )
+                }
+                Some(v) if v.is_empty() => {
+                    tracing::warn!("{} environment variable is not set", name);
+                    None
+                }
+                Some(v) => Some(v),
+            }
         };
 
         let url = get_env_var("S3_URL")?;
