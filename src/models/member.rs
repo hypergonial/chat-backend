@@ -1,10 +1,10 @@
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use serde::Serialize;
 
 use crate::gateway::handler::Gateway;
 
 use super::{
-    avatar::{Avatar, PartialAvatar},
+    avatar::{Avatar, PartialAvatar, UserAvatar},
     errors::BuildError,
     guild::Guild,
 };
@@ -142,11 +142,42 @@ pub enum UserLike {
 }
 
 impl UserLike {
+    /// The ID of the user or member.
     pub const fn id(&self) -> Snowflake<User> {
         match self {
             Self::Member(member) => member.user.id(),
             Self::User(user) => user.id(),
         }
+    }
+
+    /// The username of the user or member.
+    pub fn username(&self) -> &str {
+        match self {
+            Self::Member(member) => member.user.username(),
+            Self::User(user) => user.username(),
+        }
+    }
+
+    /// The display name of the user or member.
+    pub fn display_name(&self) -> Option<&str> {
+        match self {
+            Self::Member(member) => member.user.display_name(),
+            Self::User(user) => user.display_name(),
+        }
+    }
+
+    /// The avatar of the user or member.
+    pub const fn avatar(&self) -> Option<&Avatar<UserAvatar>> {
+        match self {
+            Self::Member(member) => member.user.avatar(),
+            Self::User(user) => user.avatar(),
+        }
+    }
+
+    /// When the user or member was created.
+    /// This is the same as the user ID's creation date.
+    pub const fn created_at(&self) -> DateTime<Utc> {
+        self.id().created_at()
     }
 }
 

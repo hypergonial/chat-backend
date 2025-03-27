@@ -296,3 +296,292 @@ impl From<&Message> for Snowflake<Message> {
         message.id()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use rand::seq::SliceRandom;
+
+    use crate::models::{attachment::PartialAttachment, avatar::AvatarLike, omittableoption::OmittableOption};
+
+    use super::*;
+
+    fn dummy_message() -> Message {
+        Message::builder()
+            .id(Snowflake::new(123))
+            .channel_id(Snowflake::new(456))
+            .content(Some("Test content".to_string()))
+            .author(UserLike::User(
+                User::builder()
+                    .id(Snowflake::new(789))
+                    .username("testuser")
+                    .avatar(Avatar::Partial(
+                        PartialAvatar::new("avatar_hash_png".to_string(), Snowflake::new(789))
+                            .expect("Failed to build avatar"),
+                    ))
+                    .build()
+                    .expect("Failed to build user"),
+            ))
+            .build()
+            .expect("Failed to build message")
+    }
+
+    #[test]
+    fn test_message_builder_validation() {
+        // Valid: has content
+        let result = Message::builder()
+            .id(Snowflake::new(1))
+            .channel_id(Snowflake::new(2))
+            .content(Some("Hello".to_string()))
+            .author(UserLike::User(
+                User::builder()
+                    .id(Snowflake::new(789))
+                    .username("testuser")
+                    .build()
+                    .expect("Failed to build user"),
+            ))
+            .build();
+        assert!(result.is_ok());
+
+        // Valid: has attachments but no content
+        let result = Message::builder()
+            .id(Snowflake::new(1))
+            .channel_id(Snowflake::new(2))
+            .author(UserLike::User(
+                User::builder()
+                    .id(Snowflake::new(789))
+                    .username("testuser")
+                    .build()
+                    .expect("Failed to build user"),
+            ))
+            .attachments(vec![Attachment::Partial(PartialAttachment::new(
+                0,
+                "test.txt".to_string(),
+                "text/plain".to_string(),
+                Snowflake::new(2),
+                Snowflake::new(1),
+            ))])
+            .build();
+        assert!(result.is_ok());
+
+        // Invalid: no content and no attachments
+        let result = Message::builder()
+            .id(Snowflake::new(1))
+            .author(UserLike::User(
+                User::builder()
+                    .id(Snowflake::new(789))
+                    .username("testuser")
+                    .build()
+                    .expect("Failed to build user"),
+            ))
+            .channel_id(Snowflake::new(2))
+            .build();
+        assert!(result.is_err());
+
+        // Invalid: has no author
+        let result = Message::builder()
+            .id(Snowflake::new(1))
+            .channel_id(Snowflake::new(2))
+            .content(Some("Hello".to_string()))
+            .build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_message_getters() {
+        let user = User::builder()
+            .id(Snowflake::new(789))
+            .username("testuser")
+            .build()
+            .expect("Failed to build user");
+
+        let attachment = Attachment::Partial(PartialAttachment::new(
+            0,
+            "test.txt".to_string(),
+            "text/plain".to_string(),
+            Snowflake::new(2),
+            Snowflake::new(1),
+        ));
+
+        let message = Message::builder()
+            .id(Snowflake::new(123))
+            .channel_id(Snowflake::new(456))
+            .author(UserLike::User(user))
+            .content(Some("Test content".to_string()))
+            .nonce(Some("test-nonce".to_string()))
+            .edited(true)
+            .attachments(vec![attachment])
+            .build()
+            .expect("Failed to build message");
+
+        assert_eq!(message.id(), Snowflake::new(123));
+        assert_eq!(message.channel_id(), Snowflake::new(456));
+        assert!(message.author().is_some());
+        assert_eq!(message.content(), Some("Test content"));
+        assert_eq!(message.nonce(), Some("test-nonce"));
+        assert!(message.edited());
+        assert!(!message.attachments().is_empty());
+    }
+
+    #[test]
+    fn test_apply_update() {
+        let mut message = dummy_message();
+        assert_eq!(message.content(), Some("Test content"));
+        assert!(!message.edited());
+
+        // Update content
+        let update = UpdateMessage {
+            content: OmittableOption::Some("Updated content".to_string()),
+        };
+
+        message.apply_update(update);
+
+        assert_eq!(message.content(), Some("Updated content"));
+        assert!(message.edited());
+
+        // Update with same content shouldn't change edited flag
+        let update = UpdateMessage {
+            content: OmittableOption::Some("Updated content".to_string()),
+        };
+
+        message.edited = false;
+        message.apply_update(update);
+
+        assert_eq!(message.content(), Some("Updated content"));
+        assert!(!message.edited());
+    }
+
+    #[test]
+    fn test_from_records_empty() {
+        let records: Vec<ExtendedMessageRecord> = Vec::new();
+        let result = Message::from_records(records);
+        assert!(result.expect("expected Ok").is_empty());
+    }
+
+    #[test]
+    fn test_from_records_single() {
+        let records = {
+            (0..5)
+                .map(|i| ExtendedMessageRecord {
+                    id: 0,
+                    channel_id: 1,
+                    content: Some("Test content".to_string()),
+                    user_id: Some(Snowflake::new(2)),
+                    edited: false,
+                    username: Some("testuser".to_string()),
+                    display_name: Some("Test User".to_string()),
+                    avatar_hash: Some("avatar_hash_png".to_string()),
+                    attachment_id: Some(i),
+                    attachment_filename: Some("test.txt".to_string()),
+                    attachment_content_type: Some("text/plain".to_string()),
+                })
+                .collect::<Vec<_>>()
+        };
+
+        let result = Message::from_records(records);
+        let messages = result.expect("expected Ok");
+        assert!(messages.len() == 1);
+
+        let message = &messages[0];
+
+        assert_eq!(message.id(), Snowflake::new(0));
+        assert_eq!(message.channel_id(), Snowflake::new(1));
+        assert_eq!(message.content(), Some("Test content"));
+        assert!(message.author().is_some());
+        assert_eq!(message.author().expect("Should have author").username(), "testuser");
+        assert_eq!(
+            message.author().expect("Should have author").display_name(),
+            Some("Test User")
+        );
+        assert_eq!(
+            message
+                .author()
+                .expect("Should have author")
+                .avatar()
+                .expect("Should have avatar")
+                .avatar_hash(),
+            "avatar_hash_png"
+        );
+        assert_eq!(message.attachments().len(), 5);
+        assert_eq!(message.attachments()[0].id(), 0);
+        assert_eq!(message.attachments()[0].filename(), "test.txt");
+        assert_eq!(message.attachments()[0].mime(), mime::TEXT_PLAIN);
+        assert_eq!(message.attachments()[0].channel_id(), Snowflake::new(1));
+        assert_eq!(message.attachments()[0].message_id(), Snowflake::new(0));
+    }
+
+    #[test]
+    fn test_from_records_multiple() {
+        let mut records = {
+            (0..25)
+                .map(|i| ExtendedMessageRecord {
+                    id: i % 5,
+                    channel_id: 1,
+                    content: Some("Test content".to_string()),
+                    user_id: Some(Snowflake::new(2)),
+                    edited: false,
+                    username: Some("testuser".to_string()),
+                    display_name: Some("Test User".to_string()),
+                    avatar_hash: Some("avatar_hash_png".to_string()),
+                    attachment_id: Some((i / 5).try_into().expect("explod")),
+                    attachment_filename: Some("test.txt".to_string()),
+                    attachment_content_type: Some("text/plain".to_string()),
+                })
+                .collect::<Vec<_>>()
+        };
+
+        records.shuffle(&mut rand::thread_rng());
+
+        let mut messages = Message::from_records(records)
+            .expect("expected Ok")
+            .into_iter()
+            .sorted_by_key(super::Message::id)
+            .collect::<Vec<_>>();
+        assert!(messages.len() == 5);
+
+        println!("Messages: {messages:#?}");
+
+        for (i, message) in messages.iter_mut().enumerate() {
+            assert_eq!(message.id(), Snowflake::new(i as i64));
+            assert_eq!(message.channel_id(), Snowflake::new(1));
+            assert_eq!(message.content(), Some("Test content"));
+            assert!(message.author().is_some());
+            assert_eq!(message.author().expect("Should have author").username(), "testuser");
+            assert_eq!(
+                message.author().expect("Should have author").display_name(),
+                Some("Test User")
+            );
+            assert_eq!(
+                message
+                    .author()
+                    .expect("Should have author")
+                    .avatar()
+                    .expect("Should have avatar")
+                    .avatar_hash(),
+                "avatar_hash_png"
+            );
+
+            message.attachments.sort_by_key(super::AttachmentLike::id);
+
+            assert_eq!(message.attachments().len(), 5, "message {i} should have 5 attachments",);
+            assert_eq!(message.attachments()[0].id(), 0);
+            assert_eq!(message.attachments()[1].id(), 1);
+            assert_eq!(message.attachments()[2].id(), 2);
+            assert_eq!(message.attachments()[3].id(), 3);
+            assert_eq!(message.attachments()[4].id(), 4);
+            assert_eq!(message.attachments()[0].filename(), "test.txt");
+            assert_eq!(message.attachments()[0].mime(), mime::TEXT_PLAIN);
+            assert_eq!(message.attachments()[0].channel_id(), Snowflake::new(1));
+            assert_eq!(message.attachments()[0].message_id(), Snowflake::new(i as i64));
+        }
+    }
+
+    #[test]
+    fn test_snowflake_conversions() {
+        let message = dummy_message();
+        let id = Snowflake::<Message>::from(&message);
+        assert_eq!(id, Snowflake::new(123));
+
+        let id2 = Snowflake::<Message>::from(message);
+        assert_eq!(id2, Snowflake::new(123));
+    }
+}
