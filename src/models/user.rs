@@ -301,3 +301,114 @@ impl From<&mut User> for Snowflake<User> {
         user.id()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Helper to create a dummy User record.
+    fn dummy_user() -> User {
+        let record = UserRecord {
+            id: Snowflake::new(0),
+            username: "initial".to_string(),
+            display_name: None,
+            avatar_hash: None,
+            last_presence: 0,
+        };
+        User::from_record(record)
+    }
+
+    #[test]
+    fn test_validate_username_valid() {
+        // Valid usernames: lowercase letters, digits and dots.
+        assert!(User::validate_username("abc").is_ok());
+        assert!(User::validate_username("test.user").is_ok());
+    }
+
+    #[test]
+    fn test_validate_username_invalid() {
+        // Too short.
+        assert!(User::validate_username("ab").is_err());
+        // Too long.
+        let long_username = "a".repeat(33);
+        assert!(User::validate_username(&long_username).is_err());
+        // Contains uppercase letters.
+        assert!(User::validate_username("Invalid").is_err());
+        // Contains dash which is not allowed by the regex.
+        assert!(User::validate_username("test-user").is_err());
+        // Contains more than one underscore in a row.
+        assert!(User::validate_username("test__user").is_err());
+        // Contains non-alphanmeric characters.
+        assert!(User::validate_username("test!user").is_err());
+    }
+
+    #[test]
+    fn test_set_username_valid() {
+        let mut user = dummy_user();
+        let res = user.set_username("new.valid".to_string());
+        assert!(res.is_ok());
+        assert_eq!(user.username(), "new.valid");
+    }
+
+    #[test]
+    fn test_set_username_invalid() {
+        let mut user = dummy_user();
+        let res = user.set_username("NoUpper".to_string());
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_from_record() {
+        let record = UserRecord {
+            id: Snowflake::new(42),
+            username: "testuser".to_string(),
+            display_name: Some("Test User".to_string()),
+            avatar_hash: Some("abc123_png".to_string()),
+            last_presence: 1,
+        };
+
+        let user = User::from_record(record);
+
+        assert_eq!(user.id(), Snowflake::new(42));
+        assert_eq!(user.username(), "testuser");
+        assert_eq!(user.display_name(), Some("Test User"));
+        assert!(user.avatar().is_some());
+        assert_eq!(*user.last_presence(), Presence::Away);
+    }
+
+    #[test]
+    fn test_update_display_name() {
+        let mut user = dummy_user();
+        let mut request = UpdateUser {
+            username: None,
+            display_name: OmittableOption::Omitted,
+            avatar: OmittableOption::Omitted,
+        };
+
+        // Test valid display name
+        request.display_name = OmittableOption::Some("Valid Name".to_string());
+        let res = user.update(request.clone());
+        assert!(res.is_ok());
+        assert_eq!(user.display_name(), Some("Valid Name"));
+
+        // Test too short display name
+        request.display_name = OmittableOption::Some("ab".to_string());
+        let res = user.update(request.clone());
+        assert!(res.is_err());
+
+        // Test too long display name
+        let long_name = "a".repeat(33);
+        request.display_name = OmittableOption::Some(long_name);
+        let res = user.update(request);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_presence_conversion() {
+        assert_eq!(Presence::from(0), Presence::Online);
+        assert_eq!(Presence::from(1), Presence::Away);
+        assert_eq!(Presence::from(2), Presence::Busy);
+        assert_eq!(Presence::from(3), Presence::Offline);
+        assert_eq!(Presence::from(99), Presence::Offline); // Any other value defaults to Offline
+    }
+}
