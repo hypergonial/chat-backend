@@ -65,7 +65,7 @@ chrono = { version = "0.4", default-features = false, features = [
 reqwest = { version = "0.12", features = ["rustls-tls", "json"] }
 # Consider swapping to using object-store instead? https://crates.io/crates/object_store
 aws-config = "1.6"
-aws-sdk-s3 = "1.79"
+aws-sdk-s3 = "1.80"
 secrecy = { version = "0.8", features = ["serde"] }
 argon2 = { version = "0.5", features = ["std"] }
 bitflags = { version = "2.6", features = ["serde"] }
