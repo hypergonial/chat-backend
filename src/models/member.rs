@@ -204,3 +204,79 @@ impl From<&Member> for Snowflake<User> {
         member.user.id()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn new_test_user(id: Snowflake<User>) -> User {
+        User::builder()
+            .id(id)
+            .username(String::from("testuser"))
+            .last_presence(0)
+            .build()
+            .expect("Should successfully build a test user")
+    }
+
+    #[test]
+    fn test_from_record() {
+        let user_id = Snowflake::new(1);
+        let guild_id = Snowflake::new(2);
+        let test_user = new_test_user(user_id);
+        let record = MemberRecord {
+            user_id,
+            guild_id,
+            nickname: Some(String::from("TestNickname")),
+            joined_at: 1000,
+        };
+
+        let member = Member::from_record(test_user, record);
+        assert_eq!(member.user.id(), user_id);
+        assert_eq!(member.guild_id, guild_id);
+        assert_eq!(member.nickname, Some(String::from("TestNickname")));
+        assert_eq!(member.joined_at, 1000);
+    }
+
+    #[test]
+    fn test_from_extended_record() {
+        let user_id = Snowflake::new(1);
+        let guild_id = Snowflake::new(2);
+        let extended_record = ExtendedMemberRecord {
+            user_id,
+            guild_id,
+            nickname: Some(String::from("ExtendedNickname")),
+            joined_at: 2000,
+            username: String::from("extendeduser"),
+            display_name: Some(String::from("Extended Display")),
+            avatar_hash: Some(String::from("hash123_png")),
+            last_presence: 1,
+        };
+
+        let member = Member::from_extended_record(extended_record).expect("Should build member from extended record");
+        assert_eq!(member.user.id(), user_id);
+        assert_eq!(member.guild_id, guild_id);
+        assert_eq!(member.nickname, Some(String::from("ExtendedNickname")));
+        assert_eq!(member.joined_at, 2000);
+        assert_eq!(member.user.username(), "extendeduser");
+        assert_eq!(member.user.display_name(), Some("Extended Display"));
+        assert_eq!(
+            member.user.avatar(),
+            Some(&Avatar::Partial(
+                PartialAvatar::new("hash123_png".to_string(), user_id).expect("Failed to build avatar")
+            ))
+        );
+    }
+
+    #[test]
+    fn test_from_user() {
+        let user_id = Snowflake::new(1);
+        let test_user = new_test_user(user_id);
+        let guild_id = Snowflake::new(2);
+        let member = Member::from_user(test_user, guild_id);
+        assert_eq!(member.user.id(), user_id);
+        assert_eq!(member.guild_id, guild_id);
+        assert_eq!(member.nickname, None);
+        let now = Utc::now().timestamp();
+        assert!((now - member.joined_at).abs() < 10);
+    }
+}
