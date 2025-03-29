@@ -18,7 +18,8 @@ static FCM_SCOPES: [&str; 1] = ["https://www.googleapis.com/auth/firebase.messag
 #[derive(Serialize)]
 struct FirebaseMessage<'a> {
     token: &'a str,
-    notification: &'a Notification,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    notification: Option<&'a Notification>,
     #[serde(skip_serializing_if = "Option::is_none")]
     data: Option<&'a HashMap<String, String>>,
 }
@@ -266,7 +267,7 @@ impl FirebaseMessaging {
         auth_token: impl Into<&str>,
         project_id: impl Into<&str>,
         to: impl Into<&str>,
-        notification: &Notification,
+        notification: Option<&Notification>,
         data: Option<&HashMap<String, String>>,
     ) -> Result<(), FirebaseError> {
         let auth_token = auth_token.into();
@@ -366,7 +367,7 @@ impl FirebaseMessaging {
     pub async fn send_notification(
         &self,
         token: impl Into<String>,
-        notification: Notification,
+        notification: Option<Notification>,
         data: Option<HashMap<String, String>>,
     ) -> Result<(), FirebaseError> {
         let token = token.into();
@@ -379,7 +380,7 @@ impl FirebaseMessaging {
                 .as_str(),
             &*self.project_id,
             &*token,
-            &notification,
+            notification.as_ref(),
             data.as_ref(),
         )
         .await?;
@@ -409,7 +410,7 @@ impl FirebaseMessaging {
     pub async fn send_notification_to_multiple(
         &self,
         tokens: impl IntoIterator<Item = impl Into<String>>,
-        notification: Notification,
+        notification: Option<Notification>,
         data: Option<HashMap<String, String>>,
     ) -> Result<(), Vec<FirebaseError>> {
         let mut peekable = tokens.into_iter().peekable();
@@ -426,7 +427,7 @@ impl FirebaseMessaging {
                 .as_str(),
         );
         let project_id: Arc<str> = Arc::from(self.project_id.clone());
-        let notification: Arc<Notification> = Arc::new(notification);
+        let notification: Arc<Option<Notification>> = Arc::new(notification);
         let data: Option<Arc<HashMap<String, String>>> = data.map(Arc::new);
 
         let tasks = peekable.map(|token| {
@@ -443,7 +444,7 @@ impl FirebaseMessaging {
                     &*auth_token,
                     &*project_id,
                     &*token,
-                    &notification,
+                    notification.as_ref().as_ref(),
                     data.as_deref(),
                 )
                 .await

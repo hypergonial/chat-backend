@@ -1283,7 +1283,7 @@ impl<'a> Ops<'a> {
         ]);
 
         if let Err(errors) = fcm
-            .send_notification_to_multiple(tokens.into_values().flatten(), notification, Some(data))
+            .send_notification_to_multiple(tokens.into_values().flatten(), Some(notification), Some(data))
             .await
         {
             let mut invalid_tokens = Vec::new();
