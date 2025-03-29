@@ -1581,12 +1581,13 @@ async fn handle_connection(app: App, socket: WebSocket) {
 
     send_onboarding.abort();
 
+    app.gateway().remove_session(conn_id);
+
     // If we're shutting down, don't spam out presence updates
     if is_server_shutting_down {
         return;
     }
 
-    app.gateway().remove_session(conn_id);
     tracing::debug!(?user, "Disconnected: {} ({})", user.username(), conn_id);
 
     // Refetch presence in case it changed, to ensure we don't accidentally reveal the user's presence
