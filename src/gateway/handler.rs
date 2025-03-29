@@ -436,7 +436,7 @@ impl SessionHandle {
                             user_forwarder.send((conn_id, msg)).ok();
                         }
                         Err(RecvError::Lagged(e)) => {
-                            tracing::warn!(error = %e, "Forwarder is lagging, dropping messages");
+                            tracing::warn!(count = %e, "Forwarder is lagging, dropping messages");
                         }
                         Err(_) => break,
                     }
@@ -627,10 +627,12 @@ impl GatewayActor {
                     match receiver.recv().await {
                         Ok((id, msg)) => {
                             let Some(app) = maybe_app.upgrade() else { break };
-                            app.ops().handle_inbound_gateway_message(id, msg).await;
+                            tokio::spawn(async move {
+                                app.ops().handle_inbound_gateway_message(id, msg).await;
+                            });
                         }
                         Err(RecvError::Lagged(e)) => {
-                            tracing::warn!(error = %e, "Forwarder is lagging, dropping messages");
+                            tracing::warn!(count = %e, "Global forwarder is lagging, dropping messages");
                         }
                         Err(_) => break,
                     }
