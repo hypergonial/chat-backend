@@ -1279,11 +1279,13 @@ impl<'a> Ops<'a> {
         let data = HashMap::from([
             ("type".to_string(), "notification".to_string()),
             ("guild_id".to_string(), guild_id.to_string()),
+            ("title".to_string(), notification.title),
+            ("body".to_string(), notification.body),
             ("channel_id".to_string(), originating_channel.into().to_string()),
         ]);
 
         if let Err(errors) = fcm
-            .send_notification_to_multiple(tokens.into_values().flatten(), Some(notification), Some(data))
+            .send_notification_to_multiple(tokens.into_values().flatten(), None, Some(data))
             .await
         {
             let mut invalid_tokens = Vec::new();
