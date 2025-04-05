@@ -62,7 +62,14 @@ chrono = { version = "0.4", default-features = false, features = [
     "std",
     "clock",
 ] }
-reqwest = { version = "0.12", features = ["rustls-tls", "json"] }
+# Do not use default features as it depends on native TLS by default
+reqwest = { version = "0.12", default-features = false, features = [
+    "charset",
+    "http2",
+    "macos-system-configuration",
+    "rustls-tls",
+    "json",
+] }
 # Consider swapping to using object-store instead? https://crates.io/crates/object_store
 aws-config = "1.6"
 aws-sdk-s3 = "1.80"
