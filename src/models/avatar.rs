@@ -266,7 +266,7 @@ impl<K: AvatarKind> PartialAvatar<K> {
     /// * If the MIME type is not an image.
     pub fn new(avatar_hash: String, holder_id: impl Into<Snowflake<K::HolderType>>) -> Result<Self, BuildError> {
         let mime = {
-            avatar_hash.split('_').last().map_or_else(
+            avatar_hash.split('_').next_back().map_or_else(
                 || Err(BuildError::ValidationError("no MIME type at end of avatar hash".into())),
                 |file_ext| match file_ext {
                     "png" => Ok(mime::IMAGE_PNG),

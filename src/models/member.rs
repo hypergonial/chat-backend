@@ -79,7 +79,7 @@ impl Member {
     }
 
     /// Mutable handle to the user this guild member represents
-    pub fn user_mut(&mut self) -> &mut User {
+    pub const fn user_mut(&mut self) -> &mut User {
         &mut self.user
     }
 

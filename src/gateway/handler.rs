@@ -197,8 +197,7 @@ impl Display for ConnectionId {
 /// * `user_id` - The ID of the user
 /// * `guild_ids` - The guilds the user is a member of
 /// * `handles` - The session handles for the user
-/// * `broadcast` - The broadcast channel for incoming messages coming from sessions.
-///    Session handles will forward messages to this channel.
+/// * `broadcast` - The broadcast channel for incoming messages coming from sessions. Session handles will forward messages to this channel.
 #[derive(Debug)]
 struct UserHandle {
     user_id: Snowflake<User>,
@@ -225,7 +224,7 @@ impl UserHandle {
     }
 
     /// Get a mutable handle to the guilds the user is a member of
-    pub fn guild_ids_mut(&mut self) -> &mut HashSet<Snowflake<Guild>> {
+    pub const fn guild_ids_mut(&mut self) -> &mut HashSet<Snowflake<Guild>> {
         &mut self.guild_ids
     }
 

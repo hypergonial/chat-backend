@@ -117,7 +117,7 @@ impl User {
     }
 
     /// The user's display name. This is the same as the username unless the user has changed it.
-    pub fn display_name_mut(&mut self) -> Option<&mut String> {
+    pub const fn display_name_mut(&mut self) -> Option<&mut String> {
         self.display_name.as_mut()
     }
 

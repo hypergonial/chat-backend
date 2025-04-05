@@ -131,7 +131,7 @@ impl Message {
     }
 
     /// Mutable handle to the content of the message.
-    pub fn content_mut(&mut self) -> Option<&mut String> {
+    pub const fn content_mut(&mut self) -> Option<&mut String> {
         self.content.as_mut()
     }
 
@@ -200,7 +200,7 @@ impl Message {
                     Some(Ok(mut msg)) => {
                         if let Ok(attachment) = entry.try_into().map(Attachment::Partial) {
                             msg.attachments.push(attachment);
-                        };
+                        }
 
                         Some(Ok(msg))
                     }
