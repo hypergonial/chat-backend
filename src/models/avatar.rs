@@ -291,7 +291,7 @@ impl<K: AvatarKind> PartialAvatar<K> {
     /// ## Errors
     ///
     /// * [`AppError::S3`] - If the S3 request fails.
-    pub async fn download(self, buckets: &S3Service) -> Result<FullAvatar<K>, AppError> {
+    pub async fn download(self, s3: &S3Service) -> Result<FullAvatar<K>, AppError> {
         let mime = self.mime().clone();
         let mut attachment = FullAvatar::builder()
             .avatar_hash(self.avatar_hash)
@@ -299,7 +299,7 @@ impl<K: AvatarKind> PartialAvatar<K> {
             .mime(mime)
             .content(Bytes::new())
             .build()?;
-        attachment.download(buckets).await?;
+        attachment.download(s3).await?;
         Ok(attachment)
     }
 }

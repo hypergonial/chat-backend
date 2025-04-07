@@ -202,12 +202,12 @@ impl S3Service {
 #[derive(Clone, Debug)]
 pub struct Bucket<'a> {
     name: &'static str,
-    buckets: &'a S3Service,
+    s3: &'a S3Service,
 }
 
 impl<'a> Bucket<'a> {
-    pub const fn new(buckets: &'a S3Service, name: &'static str) -> Self {
-        Self { name, buckets }
+    pub const fn new(s3: &'a S3Service, name: &'static str) -> Self {
+        Self { name, s3 }
     }
 
     /// The name of this bucket.
@@ -230,14 +230,7 @@ impl<'a> Bucket<'a> {
     ///
     /// * [`AppError::S3`] - If the S3 request fails.
     pub async fn get_object(&self, key: impl Into<String>) -> Result<Bytes, AppError> {
-        let mut resp = self
-            .buckets
-            .client()
-            .get_object()
-            .bucket(self.name)
-            .key(key)
-            .send()
-            .await?;
+        let mut resp = self.s3.client().get_object().bucket(self.name).key(key).send().await?;
 
         let mut bytes = BytesMut::new();
         while let Some(chunk) = resp.body.next().await {
@@ -264,7 +257,7 @@ impl<'a> Bucket<'a> {
         data: impl Into<ByteStream>,
         content_type: &Mime,
     ) -> Result<(), AppError> {
-        self.buckets
+        self.s3
             .client()
             .put_object()
             .bucket(self.name)
@@ -296,7 +289,7 @@ impl<'a> Bucket<'a> {
         let mut objects = Vec::new();
 
         // AWS-SDK has a nice pagination API to send continuation tokens implicitly, so we use that
-        let mut req = self.buckets.client().list_objects_v2().bucket(self.name).prefix(prefix);
+        let mut req = self.s3.client().list_objects_v2().bucket(self.name).prefix(prefix);
 
         if let Some(limit) = limit {
             req = req.max_keys(limit);
@@ -324,7 +317,7 @@ impl<'a> Bucket<'a> {
     ///
     /// * [`AppError::S3`] - If the S3 request fails.
     pub async fn delete_object(&self, key: impl Into<String>) -> Result<(), AppError> {
-        self.buckets
+        self.s3
             .client()
             .delete_object()
             .bucket(self.name)
@@ -363,7 +356,7 @@ impl<'a> Bucket<'a> {
             })
             .collect();
 
-        self.buckets
+        self.s3
             .client()
             .delete_objects()
             .bucket(self.name)

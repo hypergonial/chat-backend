@@ -27,7 +27,7 @@ pub trait AttachmentLike {
     /// This determines the ordering of attachments within a message, starting from 0.
     fn id(&self) -> u8;
     /// The name of the attachment file, including the file extension.
-    fn filename(&self) -> &String;
+    fn filename(&self) -> &str;
     /// The ID of the message this attachment belongs to.
     fn message_id(&self) -> Snowflake<Message>;
     /// The ID of the channel the message was sent to.
@@ -164,9 +164,8 @@ impl FullAttachment {
     /// ## Errors
     ///
     /// * [`AppError::S3`] - If the S3 request fails.
-    pub async fn upload(&self, buckets: &S3Service) -> Result<(), AppError> {
-        buckets
-            .attachments()
+    pub async fn upload(&self, s3: &S3Service) -> Result<(), AppError> {
+        s3.attachments()
             .put_object(self.s3_key(), self.content.clone(), &self.mime())
             .await
     }
@@ -176,8 +175,8 @@ impl FullAttachment {
     /// ## Errors
     ///
     /// * [`AppError::S3`] - If the S3 request fails.
-    pub async fn download(&mut self, buckets: &S3Service) -> Result<(), AppError> {
-        self.content = buckets.attachments().get_object(self.s3_key()).await?;
+    pub async fn download(&mut self, s3: &S3Service) -> Result<(), AppError> {
+        self.content = s3.attachments().get_object(self.s3_key()).await?;
         Ok(())
     }
 
@@ -187,8 +186,8 @@ impl FullAttachment {
     /// ## Errors
     ///
     /// * [`AppError::S3`] - If the S3 request fails.
-    pub async fn delete(&self, buckets: &S3Service) -> Result<(), AppError> {
-        buckets.attachments().delete_object(self.s3_key()).await
+    pub async fn delete(&self, s3: &S3Service) -> Result<(), AppError> {
+        s3.attachments().delete_object(self.s3_key()).await
     }
 }
 
@@ -197,7 +196,7 @@ impl AttachmentLike for FullAttachment {
         self.id
     }
 
-    fn filename(&self) -> &String {
+    fn filename(&self) -> &str {
         &self.filename
     }
 
@@ -264,7 +263,7 @@ impl PartialAttachment {
     /// ## Errors
     ///
     /// * [`AppError::S3`] - If the S3 request fails.
-    pub async fn download(self, buckets: &S3Service) -> Result<FullAttachment, AppError> {
+    pub async fn download(self, s3: &S3Service) -> Result<FullAttachment, AppError> {
         let mut attachment = FullAttachment::new(
             self.id,
             self.filename,
@@ -273,7 +272,7 @@ impl PartialAttachment {
             self.channel_id,
             self.message_id,
         );
-        attachment.download(buckets).await?;
+        attachment.download(s3).await?;
         Ok(attachment)
     }
 
@@ -405,7 +404,7 @@ impl AttachmentLike for PartialAttachment {
         self.id
     }
 
-    fn filename(&self) -> &String {
+    fn filename(&self) -> &str {
         &self.filename
     }
 
