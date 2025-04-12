@@ -95,9 +95,9 @@ dashmap = "6.1"
 color-eyre = "0.6"
 data-url = "0.3"
 mimalloc = "0.1"
-gcp_auth = "0.12.3"
-itertools = "0.14.0"
-rustls = "0.23.25"
+gcp_auth = "0.12"
+itertools = "0.14"
+rustls = "0.23"
 
 [dev-dependencies]
 dotenvy_macro = "0.15"
