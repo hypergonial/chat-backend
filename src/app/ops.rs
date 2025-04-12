@@ -11,7 +11,7 @@ use crate::{
         Database, FirebaseMessaging, S3Service,
         fcm::{FCMErrorCode, FirebaseErrorKind, Notification},
     },
-    gateway::handler::{ConnectionId, Gateway, SendMode},
+    gateway::{ConnectionId, Gateway, SendMode},
     models::{
         attachment::{Attachment, AttachmentLike, FullAttachment},
         avatar::{Avatar, AvatarLike},
@@ -28,7 +28,7 @@ use crate::{
     },
 };
 
-/// Contains all operations that affect or rely on state.
+/// Contains all operations that affect or rely on external state.
 #[derive(Builder)]
 #[builder(setter(into), build_fn(error = "BuildError"))]
 pub struct Ops<'a> {

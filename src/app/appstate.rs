@@ -14,7 +14,7 @@ use super::ops::Ops;
 use crate::{external::FirebaseMessaging, models::errors::BuildError};
 use crate::{
     external::{Database, S3Service},
-    gateway::handler::Gateway,
+    gateway::Gateway,
     models::errors::AppError,
 };
 

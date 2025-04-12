@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 
-use crate::gateway::handler::Gateway;
+use crate::gateway::Gateway;
 
 use super::{
     avatar::{Avatar, PartialAvatar, UserAvatar},

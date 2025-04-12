@@ -14,7 +14,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use thiserror::Error;
 
-use crate::{external::fcm::FirebaseError, gateway::handler::GatewayCloseCode};
+use crate::{external::fcm::FirebaseError, gateway::GatewayCloseCode};
 
 /// An error response returned by the REST API.
 #[derive(Debug, Clone)]

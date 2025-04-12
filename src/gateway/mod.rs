@@ -1,3 +1,4 @@
+pub mod actor;
 pub mod handler;
 
-pub use handler::{Gateway, SendMode};
+pub use actor::{ConnectionId, Gateway, GatewayCloseCode, SendMode};
