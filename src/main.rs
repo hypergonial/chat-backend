@@ -1,15 +1,15 @@
 #![allow(async_fn_in_trait)]
 
-use axum::{Router, ServiceExt, extract::Request};
+use axum::{ServiceExt, extract::Request};
 use chat_backend::{
     app::{App, ApplicationState},
-    gateway, rest,
+    main_router,
 };
 use color_eyre::eyre::Result;
 use mimalloc::MiMalloc;
 use tokio::signal::ctrl_c;
 use tower::Layer;
-use tower_http::{normalize_path::NormalizePathLayer, trace::TraceLayer};
+use tower_http::normalize_path::NormalizePathLayer;
 
 #[cfg(debug_assertions)]
 use tracing::level_filters::LevelFilter;
@@ -70,27 +70,23 @@ async fn main() -> Result<()> {
         .expect("Failed to install default TLS crypto provider.");
 
     // Initialize the application state
-    let state = ApplicationState::from_env().await?;
-    state.spawn_background_tasks();
+    let app = ApplicationState::from_env().await?;
+    app.spawn_background_tasks();
 
-    let router = Router::new()
-        .nest("/gateway/v1", gateway::handler::get_router())
-        .nest("/api/v1", rest::routes::get_router())
-        .layer(TraceLayer::new_for_http())
-        .with_state(state.clone());
+    let router = main_router(app.clone());
 
-    let listener = tokio::net::TcpListener::bind(state.config.listen_addr())
+    let listener = tokio::net::TcpListener::bind(app.config.listen_addr())
         .await
         .expect("Failed to bind address");
 
-    tracing::info!("Listening on {}", state.config.listen_addr());
+    tracing::info!("Listening on {}", app.config.listen_addr());
 
     axum::serve(
         listener,
         // voodoo magic to make trailing slashes go away from URLs
         ServiceExt::<Request>::into_make_service(NormalizePathLayer::trim_trailing_slash().layer(router)),
     )
-    .with_graceful_shutdown(handle_signals(state))
+    .with_graceful_shutdown(handle_signals(app))
     .await
     .expect("Failed creating server");
 
