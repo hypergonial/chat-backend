@@ -300,6 +300,19 @@ async fn update_fcm_token(
 ///
 /// * `token` - The user's session token, already validated
 /// * `payload` - The [`RemoveFCMToken`] payload, containing the FCM token to remove
+///
+/// ## Returns
+///
+/// * `204 No Content` - If the removal was successful
+///
+/// ## Errors
+///
+/// * [`RESTError::NotFound`] - If the user is not found
+/// * [`RESTError::App`] - If the removal operation fails
+///
+/// ## Endpoint
+///
+/// DELETE `/users/@me/fcm`
 async fn remove_fcm_token(
     State(app): State<App>,
     token: Token,
