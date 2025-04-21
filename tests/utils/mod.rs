@@ -5,3 +5,4 @@ pub mod db;
 pub mod fixture_constants;
 
 pub use app::mock_app;
+pub use db::DBApp;

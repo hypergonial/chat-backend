@@ -1,14 +1,15 @@
-#![allow(clippy::unwrap_used, clippy::unreadable_literal)]
+#![cfg(feature = "db_tests")] // Only runs with `cargo test -F db_tests`
+#![allow(clippy::unwrap_used, clippy::unreadable_literal, dead_code, unused_imports)]
 
-use axum::{Router, response::Response};
+use axum::{Router, body::Body};
 use chat_backend::main_router;
 use http::{Method, StatusCode};
-use http_body_util::BodyExt;
 use serde_json::json;
 use sqlx::PgPool;
 use tokio::sync::OnceCell;
 use utils::{
-    app::{RequestBuilderExt, RouterExt, auth},
+    app::{RequestBuilderExt, ResponseExt, RouterExt, auth},
+    fixture_constants::basic::{BASIC_GUILD_1, BASIC_USER_1},
     mock_app,
 };
 
@@ -41,13 +42,6 @@ async fn mock_router(pool: PgPool) -> Router {
     main_router(app)
 }
 
-async fn assert_eq_json(response: Response, expected: serde_json::Value) {
-    let bytes = response.into_body().collect().await.unwrap().to_bytes();
-    let json = serde_json::from_slice::<serde_json::Value>(&bytes).unwrap();
-
-    assert_eq!(json, expected);
-}
-
 #[sqlx::test(fixtures("basic"))]
 async fn get_capabilities(pool: PgPool) {
     let mut router = mock_router(pool).await;
@@ -55,13 +49,15 @@ async fn get_capabilities(pool: PgPool) {
     let request = axum::http::Request::builder()
         .method(Method::GET)
         .uri("/api/v1")
-        .body(axum::body::Body::empty())
+        .body(Body::empty())
         .unwrap();
 
     let response = router.push_request(request).await;
     assert_eq!(response.status(), StatusCode::OK);
 
-    assert_eq_json(response, json!({"capabilities": 0})).await;
+    let json = response.into_json().await;
+
+    assert_eq!(json["capabilities"].as_u64(), Some(0));
 }
 
 #[sqlx::test(fixtures("basic", "basic_credentials"))]
@@ -73,7 +69,7 @@ async fn get_user(pool: PgPool) {
         .method(Method::GET)
         .uri("/api/v1/users/@me")
         .bearer_auth(tokens.test.clone())
-        .body(axum::body::Body::empty())
+        .body(Body::empty())
         .unwrap();
 
     let response = router.push_request(request).await;
@@ -88,7 +84,8 @@ async fn get_user(pool: PgPool) {
         "presence": null
     });
 
-    assert_eq_json(response, expected).await;
+    let json = response.into_json().await;
+    assert_eq!(json, expected);
 }
 
 #[sqlx::test(fixtures("basic", "basic_credentials"))]
@@ -100,7 +97,7 @@ async fn get_user_2(pool: PgPool) {
         .method(Method::GET)
         .uri("/api/v1/users/@me")
         .bearer_auth(tokens.test2.clone())
-        .body(axum::body::Body::empty())
+        .body(Body::empty())
         .unwrap();
 
     let response = router.push_request(request).await;
@@ -114,6 +111,35 @@ async fn get_user_2(pool: PgPool) {
         "avatar_hash": null,
         "presence": null
     });
+    let json = response.into_json().await;
+    assert_eq!(json, expected);
+}
 
-    assert_eq_json(response, expected).await;
+#[sqlx::test(fixtures("basic", "basic_credentials"))]
+async fn fetch_self_guilds(pool: PgPool) {
+    let mut router = mock_router(pool).await;
+    let tokens = get_tokens(&mut router).await;
+
+    let request = axum::http::Request::builder()
+        .method(Method::GET)
+        .uri("/api/v1/users/@me/guilds")
+        .bearer_auth(tokens.test.clone())
+        .body(Body::empty())
+        .unwrap();
+
+    let response = router.push_request(request).await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let json = response.into_json().await;
+
+    let expected = json!([
+        {
+            "id": BASIC_GUILD_1,
+            "name": "Test Guild",
+            "avatar_hash": null,
+            "owner_id": format!("{BASIC_USER_1}"),
+        }
+    ]);
+
+    assert_eq!(json, expected);
 }
