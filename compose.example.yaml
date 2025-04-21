@@ -99,8 +99,12 @@ services:
     volumes:
       - "${CONFIG_PATH:?err}:/config:ro"
     depends_on:
-      - db
-      - minio
+      minio:
+        condition: service_healthy
+        restart: true
+      db:
+        condition: service_started
+        restart: true
     restart: always
     networks:
       - private
