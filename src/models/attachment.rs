@@ -159,7 +159,7 @@ impl FullAttachment {
             .build()?)
     }
 
-    /// Upload the attachment content to S3. This function is called implicitly by [`Attachment`]`::commit`.
+    /// Upload the attachment content to S3. This function is called implicitly by <code>[Attachment]::commit</code>.
     ///
     /// ## Errors
     ///

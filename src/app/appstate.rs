@@ -282,7 +282,7 @@ impl S3EnvConfig {
 #[builder(setter(into), build_fn(error = "BuildError"))]
 pub struct Config {
     database_url: Secret<String>,
-    s3_config: Option<S3EnvConfig>,
+    s3: Option<S3EnvConfig>,
     listen_addr: SocketAddr,
     machine_id: i32,
     process_id: i32,
@@ -302,7 +302,7 @@ impl Config {
 
     /// The URL for the `MinIO` server, an S3-compatible storage backend.
     pub const fn s3_config(&self) -> Option<&S3EnvConfig> {
-        self.s3_config.as_ref()
+        self.s3.as_ref()
     }
 
     /// The machine id.
@@ -335,7 +335,7 @@ impl Config {
         dotenv().ok();
         Self::builder()
             .database_url(std::env::var("DATABASE_URL").expect("DATABASE_URL environment variable must be set"))
-            .s3_config(S3EnvConfig::from_env())
+            .s3(S3EnvConfig::from_env())
             .machine_id(
                 std::env::var("MACHINE_ID")
                     .expect("MACHINE_ID environment variable must be set")

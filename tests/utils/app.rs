@@ -16,7 +16,7 @@ pub async fn mock_app(pool: PgPool) -> App {
     let db = Database::from_pool(pool);
     let config = Config::builder()
         .database_url(Secret::new(String::new()))
-        .s3_config(None)
+        .s3(None)
         .listen_addr("127.0.0.1:8080".parse::<SocketAddr>().expect("Not valid SocketAddr"))
         .machine_id(0)
         .process_id(0)
