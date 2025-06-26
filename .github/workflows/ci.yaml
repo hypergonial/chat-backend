@@ -15,37 +15,55 @@ jobs:
   test:
     runs-on: ubuntu-latest
     name: "Run tests"
-
     steps:
-    - uses: actions/checkout@v4
+    - name: Setup | Checkout Repository
+      uses: actions/checkout@v4
+
     - name: Setup | Rust Toolchain
-      run: |
-        rustup update --no-self-update ${{ env.RUST_CHANNEL }}
-        rustup component add --toolchain ${{ env.RUST_CHANNEL }} rustfmt rust-src
-        rustup default ${{ env.RUST_CHANNEL }}
+      uses: dtolnay/rust-toolchain@stable
+
     - name: Setup | Cache Dependencies
       uses: Swatinem/rust-cache@v2
       with:
         key: ${{ env.RUST_CHANNEL }}
+
     - name: Build | Compile Project
       run: cargo build --verbose
+
     - name: Run | Tests
       run: cargo test --verbose
 
   clippy:
     runs-on: ubuntu-latest
     name: "Run clippy"
-
     steps:
-    - uses: actions/checkout@v4
+    - name: Setup | Checkout Repository
+      uses: actions/checkout@v4
+
     - name: Setup | Rust Toolchain
-      run: |
-        rustup update --no-self-update ${{ env.RUST_CHANNEL }}
-        rustup component add --toolchain ${{ env.RUST_CHANNEL }} rustfmt rust-src clippy
-        rustup default ${{ env.RUST_CHANNEL }}
+      uses: dtolnay/rust-toolchain@stable
+
     - name: Setup | Cache Dependencies
       uses: Swatinem/rust-cache@v2
       with:
         key: ${{ env.RUST_CHANNEL }}
+
     - name: Run | Clippy
       run: cargo clippy --verbose
+
+  format:
+    runs-on: ubuntu-latest
+    name: "Run formatter"
+    steps:
+    - name: Setup | Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Setup | Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Setup | Cache Dependencies
+      uses: Swatinem/rust-cache@v2
+      with:
+        key: ${{ env.RUST_CHANNEL }}
+    - name: Run | Formatter
+      run: cargo fmt --all -- --check
