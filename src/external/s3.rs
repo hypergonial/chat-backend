@@ -297,10 +297,10 @@ impl<'a> Bucket<'a> {
 
         let mut paginator = req.into_paginator().send();
 
-        while let Some(resp) = paginator.next().await {
-            if let Some(contents) = resp?.contents {
-                objects.extend(contents);
-            }
+        while let Some(resp) = paginator.next().await
+            && let Some(contents) = resp?.contents
+        {
+            objects.extend(contents);
         }
 
         Ok(objects)

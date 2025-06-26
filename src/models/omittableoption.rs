@@ -498,7 +498,6 @@ mod tests {
     }
 
     #[test]
-    #[expect(clippy::redundant_clone)]
     fn test_clone_method() {
         let original = OmittableOption::Some(String::from("Not copy"));
         let clone = original.clone();

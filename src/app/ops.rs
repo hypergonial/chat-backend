@@ -109,10 +109,10 @@ impl<'a> Ops<'a> {
             GatewayMessage::Heartbeat => Ok(()),
         };
 
-        if let Err(e) = res {
-            if let Some(g) = self.gateway {
-                g.close_session(connection_id, e.close_code(), e.to_string());
-            }
+        if let Err(e) = res
+            && let Some(g) = self.gateway
+        {
+            g.close_session(connection_id, e.close_code(), e.to_string());
         }
     }
 
@@ -1293,11 +1293,11 @@ impl<'a> Ops<'a> {
             let actual_errors: Vec<_> = errors
                 .into_iter()
                 .filter(|error| {
-                    if let (FirebaseErrorKind::Api(api_error), Some(token)) = (error.kind(), error.token()) {
-                        if api_error.get_fcm_error_code() == Some(FCMErrorCode::Unregistered) {
-                            invalid_tokens.push(token.to_string());
-                            return false; // Filter out unregistered errors
-                        }
+                    if let (FirebaseErrorKind::Api(api_error), Some(token)) = (error.kind(), error.token())
+                        && api_error.get_fcm_error_code() == Some(FCMErrorCode::Unregistered)
+                    {
+                        invalid_tokens.push(token.to_string());
+                        return false; // Filter out unregistered errors
                     }
                     true // Keep all other errors
                 })
