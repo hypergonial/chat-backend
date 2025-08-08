@@ -58,21 +58,21 @@ impl S3Service {
         &self.client
     }
 
-    pub const fn get_bucket(&self, name: &'static str) -> Bucket {
+    pub const fn get_bucket<'a>(&'a self, name: &'static str) -> Bucket<'a> {
         Bucket::new(self, name)
     }
 
     /// The attachments bucket.
     /// It is responsible for storing all message attachments.
-    pub const fn attachments(&self) -> Bucket {
+    pub const fn attachments(&self) -> Bucket<'_> {
         self.get_bucket("attachments")
     }
 
-    pub const fn users(&self) -> Bucket {
+    pub const fn users(&self) -> Bucket<'_> {
         self.get_bucket("users")
     }
 
-    pub const fn guilds(&self) -> Bucket {
+    pub const fn guilds(&self) -> Bucket<'_> {
         self.get_bucket("guilds")
     }
 

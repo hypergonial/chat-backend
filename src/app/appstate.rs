@@ -199,7 +199,7 @@ impl ApplicationState {
     }
 
     #[inline]
-    pub const fn ops(&self) -> Ops {
+    pub const fn ops(&self) -> Ops<'_> {
         Ops::new(
             &self.db,
             &self.config,

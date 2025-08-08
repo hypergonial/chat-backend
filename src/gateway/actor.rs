@@ -705,10 +705,10 @@ impl GatewayActor {
                     }
                 }
                 // Avoid sending events to users that don't share any guilds with the event originator
-                else if let Some(ref guild_ids) = event_user_guilds {
-                    if guild_ids.intersection(conninfo.guild_ids()).next().is_none() {
-                        continue;
-                    }
+                else if let Some(ref guild_ids) = event_user_guilds
+                    && guild_ids.intersection(conninfo.guild_ids()).next().is_none()
+                {
+                    continue;
                 }
 
                 if let Err(err) = handle.send(event.clone()) {

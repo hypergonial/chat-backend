@@ -71,10 +71,10 @@ impl Database {
     ///
     /// * [`sqlx::Error`] - If the database connection fails
     pub async fn connect(&mut self, url: &str) -> Result<(), sqlx::Error> {
-        if let Some(pool) = &self.pool {
-            if !pool.is_closed() {
-                return Ok(());
-            }
+        if let Some(pool) = &self.pool
+            && !pool.is_closed()
+        {
+            return Ok(());
         }
 
         self.pool = Some(
