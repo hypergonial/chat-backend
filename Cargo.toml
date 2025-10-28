@@ -74,19 +74,19 @@ reqwest = { version = "0.12", default-features = false, features = [
 ] }
 # Consider swapping to using object-store instead? https://crates.io/crates/object_store
 aws-config = "1.8"
-aws-sdk-s3 = "1.94"
+aws-sdk-s3 = "1.108"
 secrecy = { version = "0.8", features = ["serde"] }
 argon2 = { version = "0.5", features = ["std"] }
-bitflags = { version = "2.9", features = ["serde"] }
+bitflags = { version = "2.10", features = ["serde"] }
 uuid = { version = "1.17", features = ["v4"] }
+jsonwebtoken = { version = "10", features = ["aws_lc_rs"] }
 futures = "0.3"
 futures-util = "0.3"
-jsonwebtoken = "9.3"
 rs-snowflake = "0.6"
 dotenvy = "0.15"
 # Stuck on 0.8 until argon2 updates
 rand = "0.8"
-regex = "1.10"
+regex = "1.12"
 enum_dispatch = "0.3"
 derive_builder = "0.20"
 thiserror = "2"
