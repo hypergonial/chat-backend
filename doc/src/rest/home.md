@@ -4,14 +4,7 @@ The REST API is the main way of interacting with the Chat API. It can be used to
 
 ## Authentication flow
 
-The REST API uses JWT tokens for authentication. These tokens are obtained by sending a `POST` to `/api/v1/users/auth` with the following JSON body:
-
-```json
-{
-    "username": "example",
-    "password": "*******"
-}
-```
+The REST API uses JWT tokens for authentication. These tokens are obtained by sending a `POST` to [`/api/v1/users/auth`](./users.md#usersauth) with the user's credentials using [Basic](https://en.wikipedia.org/wiki/Basic_access_authentication) authentication.
 
 > To create a user, see [this section](./users.md#/users).
 
